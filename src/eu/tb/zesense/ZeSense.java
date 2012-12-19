@@ -6,6 +6,7 @@ import android.os.Bundle;
 import android.app.Activity;
 import android.content.Intent;
 import android.hardware.Camera;
+import android.util.Log;
 import android.view.Menu;
 import android.widget.Button;
 import android.widget.FrameLayout;
@@ -56,11 +57,13 @@ public class ZeSense extends Activity {
     @Override
     public void onStop() {
     	super.onStop();
+    	Log.i(TAG, "ZeSense main activity stopped");
     }
     
     @Override
     public void onDestroy() {
     	super.onDestroy();
+    	Log.i(TAG, "ZeSense main activity destroyed");
     }
     
 

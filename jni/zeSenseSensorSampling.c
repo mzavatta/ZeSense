@@ -51,6 +51,7 @@ enum {
 
 // Global experiment settings
 #define EXPERIMENT_DURATION 5 //Seconds
+//#define EXPERIMENT_MULTIPLE 1
 
 // Accelerometer settings ASENSOR_TYPE_ACCELEROMETER
 #define ACCEL_ON 1
@@ -58,32 +59,32 @@ enum {
 #define NUM_ACCEL_SAMPLES (ACCEL_HZ*EXPERIMENT_DURATION)
 
 // Gyro settings ASENSOR_TYPE_GYROSCOPE
-#define GYRO_ON 1
+//#define GYRO_ON 1
 #define GYRO_HZ 50 //Hz
 #define NUM_GYRO_SAMPLES (GYRO_HZ*EXPERIMENT_DURATION)
 
 // Light settings ASENSOR_TYPE_LIGHT
-#define LIGHT_ON 1
+//#define LIGHT_ON 1
 #define LIGHT_HZ 20 //Hz
 #define NUM_LIGHT_SAMPLES (LIGHT_HZ*EXPERIMENT_DURATION)
 
 // Magnetic sensor ASENSOR_TYPE_MAGNETIC_FIELD
-#define MAG_ON 1
+//#define MAG_ON 1
 #define MAG_HZ 20 //Hz
 #define NUM_MAG_SAMPLES (MAG_HZ*EXPERIMENT_DURATION)
 
 // Proximity sensor ASENSOR_TYPE_PROXIMITY
-#define PROX_ON 1
+//#define PROX_ON 1
 #define PROX_HZ 20 //Hz		//TODO: value broadcasted only when it changes!!
 #define NUM_PROX_SAMPLES (PROX_HZ*EXPERIMENT_DURATION)
 
 // Orientation sensor ZESENSE_SENSOR_TYPE_ORIENTATION
-#define ORIENT_ON 1
+//#define ORIENT_ON 1
 #define ORIENT_HZ 20 //Hz
 #define NUM_ORIENT_SAMPLES (ORIENT_HZ*EXPERIMENT_DURATION)
 
 // Pressure sensor ZESENSE_SENSOR_TYPE_PRESSURE
-#define PRES_ON 1
+//#define PRES_ON 1
 #define PRES_HZ 20 //Hz
 #define NUM_PRES_SAMPLES (PRES_HZ*EXPERIMENT_DURATION)
 
@@ -100,10 +101,11 @@ struct zeSense_experiment {
 	int64_t collGenDifference[ACCEL_HZ*EXPERIMENT_DURATION];
 };
 
+int experimenting = 1; //
 
 void Java_eu_tb_zesense_ZeSenseSensorService_zeSense_1SamplingNative(JNIEnv* env, jobject thiz) {
 
-	LOGI("Hello from native zeSense_SamplingNative");
+	LOGI("Hello from zs_SamplingNative");
 
 	struct zeSense_experiment experiment;
 
@@ -126,6 +128,10 @@ void Java_eu_tb_zesense_ZeSenseSensorService_zeSense_1SamplingNative(JNIEnv* env
     // Create event queue associated with that looper
     sensorEventQueue = ASensorManager_createEventQueue(sensorManager, looper, 45, NULL, NULL);
     LOGI("got sensorEventQueue");
+
+    //TODO: possibility of assigning a different looper-queue to each sensor in different threads!?
+    //in this way we're assigning the same looper to many fds. It will probably poll them in a predefined order
+    //instead of leaving this decision to the scheduler
 
 #ifdef ACCEL_ON
     // Grab the sensor description
@@ -229,17 +235,53 @@ void Java_eu_tb_zesense_ZeSenseSensorService_zeSense_1SamplingNative(JNIEnv* env
     }
 #endif
 
-    //TODO: possibility of assigning a different looper-queue to each sensor in different threads!?
-    //in this way we're assigning the same looper to many fds. It will probably poll them in a predefined order
-    //instead of leaving this decision to the scheduler
-
+#ifndef EXPERIMENT_MULTIPLE
     int event_counter = 0;
     ASensorEvent event;
-    while(event_counter<400) {
+    struct timeval start_time, stop_time, diff;
+    int64_t duration_time;
+    double average_frequency;
+
+    // Experiment start time
+	if(gettimeofday(&start_time, NULL)!=0) LOGW("Failed start_time gettimeofday()");
+	//LOGI("start %lu", start_time.tv_sec);
+	//LOGI("rest %lu", start_time.tv_usec);
+
+    while (event_counter < NUM_ACCEL_SAMPLES) {
+    	if (ASensorEventQueue_getEvents(sensorEventQueue, &event, 1) > 0) {
+			if (event.type == ASENSOR_TYPE_ACCELEROMETER) {
+				LOGI("accelerometer: x=%f y=%f z=%f",
+						event.acceleration.x, event.acceleration.y,
+						event.acceleration.z);
+			}
+        	event_counter++;
+    	}
+    }
+
+    LOGI("event_counter %d", event_counter);
+
+    // Experiment end time
+	if(gettimeofday(&stop_time, NULL)!=0) LOGW("Failed stop_time gettimeofday()");
+	//LOGI("stop %lu", stop_time.tv_sec);
+	//LOGI("rest %lu", stop_time.tv_usec);
+
+    // Calculate duration and average frequency
+	timeval_subtract(&diff, &stop_time, &start_time);
+	//LOGI("duration %lu", diff.tv_sec);
+	//LOGI("rest %lu", diff.tv_usec);
+
+	duration_time = (diff.tv_sec*1000000LL)+diff.tv_usec; //microsecs
+	average_frequency = (event_counter)/((double) duration_time/1000000LL);
+
+	LOGI("Experiment lasted %lld, avg freq %g", duration_time, average_frequency);
+
+#else // Use a timeout as long as EXPERIMENT_DURATION
+
+    ASensorEvent event;
+    while(experimenting) {
 		if (ASensorEventQueue_getEvents(sensorEventQueue, &event, 1) > 0) {
 
-			event_counter++;
-			LOGI("sensor event from sensor%d",event.sensor);
+			LOGI("sensor event from sensor%d", event.sensor);
 
 			if (event.type == ASENSOR_TYPE_ACCELEROMETER) {
 				LOGI("accelerometer: x=%f y=%f z=%f",
@@ -273,5 +315,38 @@ void Java_eu_tb_zesense_ZeSenseSensorService_zeSense_1SamplingNative(JNIEnv* env
 			}
 		}
     }
+#endif
     //return (*env)->NewStringUTF(env, "Hello from JNI !");
+}
+
+#ifdef EXPERIMENT_MUTIPLE
+void experiment_multi_timeout(int signum) {
+	if (experimenting == 0)
+		experimenting = 1;
+	else {
+		LOGW("timeout experiment multi fired, but not experimenting");
+		exit(1);
+	}
+#endif
+
+int timeval_subtract (result, x, y)	struct timeval *result, *x, *y; {
+	/* Perform the carry for the later subtraction by updating y. */
+	if (x->tv_usec < y->tv_usec) {
+		int nsec = (y->tv_usec - x->tv_usec) / 1000000 + 1;
+	    y->tv_usec -= 1000000 * nsec;
+	    y->tv_sec += nsec;
+	}
+	if (x->tv_usec - y->tv_usec > 1000000) {
+		int nsec = (y->tv_usec - x->tv_usec) / 1000000;
+	    y->tv_usec += 1000000 * nsec;
+	    y->tv_sec -= nsec;
+	}
+
+	/* Compute the time remaining to wait.
+	     tv_usec is certainly positive. */
+	result->tv_sec = x->tv_sec - y->tv_sec;
+	result->tv_usec = x->tv_usec - y->tv_usec;
+
+	/* Return 1 if result is negative. */
+	return x->tv_sec < y->tv_sec;
 }
