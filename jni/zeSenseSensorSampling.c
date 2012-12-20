@@ -11,6 +11,9 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#include <sys/time.h>
+#include <sys/resource.h>
+
 #include <android/log.h>
 #include <android/sensor.h>
 
@@ -50,64 +53,75 @@ enum {
 #define ZESENSE_SENSOR_TYPE_PRESSURE		6
 
 // Global experiment settings
-#define EXPERIMENT_DURATION 5 //Seconds
-//#define EXPERIMENT_MULTIPLE 1
+#define ZS_EXPERIMENT_DURATION 30 //Seconds
+//#define ZS_EXPERIMENT_MULTIPLE 1
+#define ZS_EXPERIMENT_PRIORITY (-20) //Nice values. More negative means more processor time.
 
 // Accelerometer settings ASENSOR_TYPE_ACCELEROMETER
 #define ACCEL_ON 1
-#define ACCEL_HZ 20 //Hz
-#define NUM_ACCEL_SAMPLES (ACCEL_HZ*EXPERIMENT_DURATION)
+#define ACCEL_HZ 150 //Hz
+#define NUM_ACCEL_SAMPLES (ACCEL_HZ*ZS_EXPERIMENT_DURATION)
 
 // Gyro settings ASENSOR_TYPE_GYROSCOPE
 //#define GYRO_ON 1
 #define GYRO_HZ 50 //Hz
-#define NUM_GYRO_SAMPLES (GYRO_HZ*EXPERIMENT_DURATION)
+#define NUM_GYRO_SAMPLES (GYRO_HZ*ZS_EXPERIMENT_DURATION)
 
 // Light settings ASENSOR_TYPE_LIGHT
 //#define LIGHT_ON 1
 #define LIGHT_HZ 20 //Hz
-#define NUM_LIGHT_SAMPLES (LIGHT_HZ*EXPERIMENT_DURATION)
+#define NUM_LIGHT_SAMPLES (LIGHT_HZ*ZS_EXPERIMENT_DURATION)
 
 // Magnetic sensor ASENSOR_TYPE_MAGNETIC_FIELD
 //#define MAG_ON 1
 #define MAG_HZ 20 //Hz
-#define NUM_MAG_SAMPLES (MAG_HZ*EXPERIMENT_DURATION)
+#define NUM_MAG_SAMPLES (MAG_HZ*ZS_EXPERIMENT_DURATION)
 
 // Proximity sensor ASENSOR_TYPE_PROXIMITY
 //#define PROX_ON 1
 #define PROX_HZ 20 //Hz		//TODO: value broadcasted only when it changes!!
-#define NUM_PROX_SAMPLES (PROX_HZ*EXPERIMENT_DURATION)
+#define NUM_PROX_SAMPLES (PROX_HZ*ZS_EXPERIMENT_DURATION)
 
 // Orientation sensor ZESENSE_SENSOR_TYPE_ORIENTATION
 //#define ORIENT_ON 1
 #define ORIENT_HZ 20 //Hz
-#define NUM_ORIENT_SAMPLES (ORIENT_HZ*EXPERIMENT_DURATION)
+#define NUM_ORIENT_SAMPLES (ORIENT_HZ*ZS_EXPERIMENT_DURATION)
 
 // Pressure sensor ZESENSE_SENSOR_TYPE_PRESSURE
 //#define PRES_ON 1
 #define PRES_HZ 20 //Hz
-#define NUM_PRES_SAMPLES (PRES_HZ*EXPERIMENT_DURATION)
+#define NUM_PRES_SAMPLES (PRES_HZ*ZS_EXPERIMENT_DURATION)
 
+#ifndef ZS_EXPERIMENT_MULTIPLE
+#define NUM_SAMPLES NUM_ACCEL_SAMPLES
+#endif
 
-struct zeSense_ASensorEvent {
+struct zs_ASensorEvent {
 	ASensorEvent event; //as it is fed into the event interface
 	struct timespec collectionTimestamp; //when we collect it
 };
 
-struct zeSense_experiment {
-	struct zeSense_ASensorEvent accelEvents[ACCEL_HZ*EXPERIMENT_DURATION];
-	int64_t collectionDifferences[(ACCEL_HZ*EXPERIMENT_DURATION)-1];
-	int64_t generationDifferences[(ACCEL_HZ*EXPERIMENT_DURATION)-1];
-	int64_t collGenDifference[ACCEL_HZ*EXPERIMENT_DURATION];
-};
+#ifndef ZS_EXPERIMENT_MULTIPLE
+	struct zs_experiment_single {
+		struct zs_ASensorEvent events_list[NUM_SAMPLES];
+		int64_t collection_periods[NUM_SAMPLES-1];
+		int64_t generation_periods[NUM_SAMPLES-1];
+		int64_t coll_gen_delay[NUM_SAMPLES];
+	};
+	struct zs_experiment_single experiment; // Experiment state, using a global is more handy
+#else
+	//TODO: structure for experiment_multiple
 
-int experimenting = 1; //
+	int experimenting = 1; // Flag to reset when the experiment timer expires
+#endif
+
+
+
+void zs_statistics();
 
 void Java_eu_tb_zesense_ZeSenseSensorService_zeSense_1SamplingNative(JNIEnv* env, jobject thiz) {
 
 	LOGI("Hello from zs_SamplingNative");
-
-	struct zeSense_experiment experiment;
 
 	// Set up sensor sampling infrastructure:
 	// the looper monitors a set of fds and feeds events to a sensor event queue
@@ -132,6 +146,22 @@ void Java_eu_tb_zesense_ZeSenseSensorService_zeSense_1SamplingNative(JNIEnv* env
     //TODO: possibility of assigning a different looper-queue to each sensor in different threads!?
     //in this way we're assigning the same looper to many fds. It will probably poll them in a predefined order
     //instead of leaving this decision to the scheduler
+
+    // Set priority
+    LOGI("Old priority %d", getpriority(PRIO_PROCESS, 0));
+    if (getpriority(PRIO_PROCESS, 0) != ZS_EXPERIMENT_PRIORITY) {
+    	int setpriority_success = setpriority(PRIO_PROCESS, 0, ZS_EXPERIMENT_PRIORITY);
+    	if (setpriority_success == 0) {
+    		LOGI("New priority %d", getpriority(PRIO_PROCESS, 0));
+    	}
+    	else {
+    		LOGW("Could not change priority to %d", ZS_EXPERIMENT_PRIORITY);
+    		exit(1);
+    	}
+    } else LOGI("New priority unchanged");
+
+    // Wait 5 seconds before starting
+    sleep(5);
 
 #ifdef ACCEL_ON
     // Grab the sensor description
@@ -235,7 +265,7 @@ void Java_eu_tb_zesense_ZeSenseSensorService_zeSense_1SamplingNative(JNIEnv* env
     }
 #endif
 
-#ifndef EXPERIMENT_MULTIPLE
+#ifndef ZS_EXPERIMENT_MULTIPLE
     int event_counter = 0;
     ASensorEvent event;
     struct timeval start_time, stop_time, diff;
@@ -244,12 +274,16 @@ void Java_eu_tb_zesense_ZeSenseSensorService_zeSense_1SamplingNative(JNIEnv* env
 
     // Experiment start time
 	if(gettimeofday(&start_time, NULL)!=0) LOGW("Failed start_time gettimeofday()");
-	//LOGI("start %lu", start_time.tv_sec);
-	//LOGI("rest %lu", start_time.tv_usec);
 
-    while (event_counter < NUM_ACCEL_SAMPLES) {
+    while (event_counter < NUM_SAMPLES) {
     	if (ASensorEventQueue_getEvents(sensorEventQueue, &event, 1) > 0) {
-			if (event.type == ASENSOR_TYPE_ACCELEROMETER) {
+			if (event.type == ASENSOR_TYPE_ACCELEROMETER) { //TODO: redundant check
+				// place event into the list
+            	experiment.events_list[event_counter].event = event;
+            	// get and assign the collection timestamp
+            	clock_gettime(CLOCK_MONOTONIC, &experiment.events_list[event_counter].collectionTimestamp);
+            	uint64_t h = (experiment.events_list[event_counter].collectionTimestamp.tv_sec*1000000000LL)
+            			+experiment.events_list[event_counter].collectionTimestamp.tv_nsec;
 				LOGI("accelerometer: x=%f y=%f z=%f",
 						event.acceleration.x, event.acceleration.y,
 						event.acceleration.z);
@@ -258,24 +292,30 @@ void Java_eu_tb_zesense_ZeSenseSensorService_zeSense_1SamplingNative(JNIEnv* env
     	}
     }
 
-    LOGI("event_counter %d", event_counter);
+    LOGI("event_counter=%d",event_counter);
 
     // Experiment end time
 	if(gettimeofday(&stop_time, NULL)!=0) LOGW("Failed stop_time gettimeofday()");
-	//LOGI("stop %lu", stop_time.tv_sec);
-	//LOGI("rest %lu", stop_time.tv_usec);
 
     // Calculate duration and average frequency
 	timeval_subtract(&diff, &stop_time, &start_time);
-	//LOGI("duration %lu", diff.tv_sec);
-	//LOGI("rest %lu", diff.tv_usec);
 
 	duration_time = (diff.tv_sec*1000000LL)+diff.tv_usec; //microsecs
 	average_frequency = (event_counter)/((double) duration_time/1000000LL);
+	//Rappel: this is not the frequency of generation of events, which is more accurately
+	//estimated by looking at the generation timestamp of the events
 
 	LOGI("Experiment lasted %lld, avg freq %g", duration_time, average_frequency);
 
-#else // Use a timeout as long as EXPERIMENT_DURATION
+	// Now start the statistics
+	zs_statistics();
+
+#else // Use a timeout as long as ZS_EXPERIMENT_DURATION
+
+	//TODO: if i don't know how many samples I'm taking, I have to use malloc
+	// to store them in an array
+
+	//TODO: register timer, handler is experiment_multi_timeout
 
     ASensorEvent event;
     while(experimenting) {
@@ -324,11 +364,12 @@ void experiment_multi_timeout(int signum) {
 	if (experimenting == 0)
 		experimenting = 1;
 	else {
-		LOGW("timeout experiment multi fired, but not experimenting");
+		LOGW("error, timeout experiment fired, but not experimenting");
 		exit(1);
 	}
 #endif
 
+// Copied from http://www.gnu.org/software/libc/manual/html_node/Elapsed-Time.html
 int timeval_subtract (result, x, y)	struct timeval *result, *x, *y; {
 	/* Perform the carry for the later subtraction by updating y. */
 	if (x->tv_usec < y->tv_usec) {
@@ -349,4 +390,168 @@ int timeval_subtract (result, x, y)	struct timeval *result, *x, *y; {
 
 	/* Return 1 if result is negative. */
 	return x->tv_sec < y->tv_sec;
+}
+
+/*
+ * Take periods of the series array and place them in periods
+ * s0, s1... sn -> p0, p1... pn-1
+ */
+void periods(int64_t* series, int seriesLength, int64_t* periods) {
+
+	//Debug
+	int seriesSize = sizeof(series);
+	int periodsSize = sizeof(periods);
+	int seriesElementSize = sizeof(series[0]);
+	int periodsElementSize = sizeof(periods[0]);
+	LOGI("seriesSize=%d, seriesElementSize=%d, seriesLength=%d, periodsLength=%d",
+			seriesSize, seriesElementSize, seriesSize/seriesElementSize, periodsSize/periodsElementSize);
+
+	int i;
+	for (i=0; i<(seriesLength-1); i++) {
+		periods[i]=series[i+1]-series[i];
+		if (periods[i]<0) {
+			LOGW("error negative period");
+			exit(1);
+		}
+	}
+	LOGI("periods loop ended, i=%d", i);
+}
+/*
+ * Standard deviation (type=1) or variance (type=2) calculator
+ */
+double dispersion(int type, int64_t average, int64_t* array, int length) {
+	int i = 0;
+	int64_t incSum = 0;
+	int64_t scarto, scartoq;
+	LOGI("average %ld", average);
+	//take difference from average, square it and compound
+	for (i=0; i<length; i++) {
+
+		//LOGI("array %lld",array[i]);
+		scarto = average-array[i];
+		//LOGI("scarto %lld", scarto);
+		scartoq = pow(scarto, 2);
+		//LOGI("%lld", scartoq);
+		incSum = incSum + scartoq;
+		//LOGI("incsum %lld", incSum);
+	}
+	LOGI("dispersion loop ended, i=%d", i);
+	if (type==1) return (incSum/length); //return variance
+	else if (type==2) return sqrt(incSum/length); //return stddev
+	else return -1;
+}
+
+/*
+ * Statistics routine computes:
+ * - Average, standard deviation of periods among sensor samples from generation timestamp
+ * - Average, standard deviation of periods among sensor samples from collection timestamp
+ * - Average, standard deviation of delay between generation and collection
+ * - Better to do in Excel: drift over time (like, 10 mins) of the average sampling rate computed
+ * for example in such a way: take 10 mins of samples, take the average sampling rate
+ * (cannot assume it aseven if you specify 10Hz the system might give you more or less,
+ * take the first sample time and project where the others should have been according to
+ * that rate average, finally get the difference between the projected and the actual samples.
+ * (wait but isn't the average affected by this drift itself? maybe take the average on the first half
+ * of the samples and see the behaviour of the other half? is there already a statistical definition for
+ * that?)
+ * - even more interesting this drift for the propagation delay of the event from HW to UserSpace
+ * Do this for all the sensors that we have, in isolation and together, for different requested
+ * sampling frequencies.
+ * TO CALCULATE THIS DRIFT WE CAN SIMPLY TAKE THE MOVING AVERAGE, NO? Nope, not at all, moving avg
+ * on the difference will only give you the relative amount, it will tell you the drift in the
+ * rate, not on the absolute time of the sample!
+ * - in-order delivery
+ *
+ * Note: the actual experiment duration might be different then what specified in EXPERIMENT_DURATION
+ * since we stop when we reach HZ*EXPERIMENT_DURATION samples taken, and Hz might be different
+ * than what specified
+ * in particular, as it seems from first experiments, the accelerometer sampling rate is capped at 100Hz
+ * if I define Hz as 200, the actual experiment duration will be roughly double
+ *
+ */
+void zs_statistics() {
+
+	int j = 0; //iterator for the arrays
+
+	/*
+	 * EVENT GENERATION FREQUENCY (input subsystem timestamps)
+	 * engine.accelEvents[].event.timestamp of type int64_t
+	 * static void periods(int64_t* series, int seriesLength, int64_t* periods)
+	 * sum the periods together
+	 * divide by (NUM_SAMPLES)-1
+	 */
+	LOGI("performing now stats on generation timestamp..");
+	int64_t genAccelSeries[NUM_SAMPLES];
+	int64_t genAccelPeriods[NUM_SAMPLES-1];
+	int64_t genAccelIncSum = 0;
+	double genAccelAvgPeriods = 0;
+	double genAccelStddev = 0;
+
+	for (j=0; j<NUM_SAMPLES; j++) {
+		genAccelSeries[j]=experiment.events_list[j].event.timestamp;
+	}
+	periods(genAccelSeries, NUM_SAMPLES, genAccelPeriods);
+	for (j=0; j<NUM_SAMPLES-1; j++) {
+		genAccelIncSum = genAccelIncSum + genAccelPeriods[j];
+	}
+	// get average and stddev
+	genAccelAvgPeriods = (double)genAccelIncSum/(NUM_SAMPLES-1);
+
+	//int k;
+	//for (k=0; k<(NUM_SAMPLES-1); k++) LOGI("%llu", genAccelPeriods[k]);
+
+	genAccelStddev = dispersion(2, genAccelAvgPeriods, genAccelPeriods, (NUM_SAMPLES-1));
+
+	LOGI("Generation Average = %e, Stddev = %e\n"
+			"Sd/Av= %e",  genAccelAvgPeriods/1000000, genAccelStddev/1000000, genAccelStddev/genAccelAvgPeriods);
+
+
+	/*
+	 * EVENT CONSUMPTION FREQUENCY (timestamp we assign when we get the sample)
+	 */
+	int64_t collAccelSeries[NUM_SAMPLES];
+	int64_t collAccelPeriods[NUM_SAMPLES-1];
+	int64_t collAccelIncSum = 0;
+	double collAccelAvgPeriods = 0;
+	double collAccelStddev = 0;
+	uint64_t h;
+	for (j=0; j<NUM_SAMPLES; j++) {
+    	h = (experiment.events_list[j].collectionTimestamp.tv_sec*1000000000LL)
+    			+experiment.events_list[j].collectionTimestamp.tv_nsec;
+    	collAccelSeries[j]=h;
+	}
+	periods(collAccelSeries, NUM_SAMPLES, collAccelPeriods);
+	for (j=0; j<NUM_SAMPLES-1; j++) {
+		collAccelIncSum = collAccelIncSum + collAccelPeriods[j];
+	}
+	collAccelAvgPeriods = (double)collAccelIncSum/(NUM_SAMPLES-1);
+	collAccelStddev = dispersion(2, collAccelAvgPeriods, collAccelPeriods, (NUM_SAMPLES-1));
+	LOGI("Consumption Average = %e, Stddev = %e\n"
+			"Sd/Av= %e",  collAccelAvgPeriods/1000000, collAccelStddev/1000000, collAccelStddev/collAccelAvgPeriods);
+
+	/*
+	 * EVENT PROPAGATION DELAY
+	 */
+	//int64_t collAccelSeries[NUM_SAMPLES];
+	int64_t travelAccelSeries[NUM_SAMPLES];
+	int64_t travelAccelIncSum = 0;
+	double travelAccelAvg = 0;
+	double travelAccelStddev = 0;
+
+	for (j=0; j<NUM_SAMPLES; j++) {
+		if (collAccelSeries[j]<genAccelSeries[j]) {
+			LOGW("Error: collection less than generation timestamp");
+			exit(1);
+		}
+    	travelAccelSeries[j] = collAccelSeries[j] - genAccelSeries[j];
+    	//LOGI("Gen: %llu, Coll %llu, Travel %llu", genAccelSeries[j], collAccelSeries[j], travelAccelSeries[j]);
+	}
+	for (j=0; j<NUM_SAMPLES; j++) {
+    	travelAccelIncSum = travelAccelIncSum + travelAccelSeries[j];
+	}
+
+	travelAccelAvg = (double)travelAccelIncSum/(NUM_SAMPLES);
+	travelAccelStddev = dispersion(2, travelAccelAvg, travelAccelSeries, (NUM_SAMPLES));
+
+	LOGI("Travel Average = %e, stddev %e", travelAccelAvg, travelAccelStddev);
 }

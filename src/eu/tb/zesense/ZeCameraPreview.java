@@ -8,6 +8,8 @@ import android.hardware.Camera;
 import android.graphics.Canvas;
 import android.graphics.Rect;
 import android.hardware.Camera.CameraInfo;
+import android.media.MediaRecorder;
+import android.util.Log;
 import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
@@ -16,6 +18,8 @@ public class ZeCameraPreview extends SurfaceView implements SurfaceHolder.Callba
 
 	SurfaceHolder mHolder;
 	public Camera camera;
+	public MediaRecorder mediaRecorder;
+
 	
 	public ZeCameraPreview(Context context) {
 		super(context);
@@ -33,7 +37,7 @@ public class ZeCameraPreview extends SurfaceView implements SurfaceHolder.Callba
 		
 		Camera.Parameters parameters = camera.getParameters();
 		
-		parameters.setPreviewSize(arg2, arg3);
+		parameters.setPreviewSize(arg2,arg3);
 		
 		List<int[]> supportedFPS = parameters.getSupportedPreviewFpsRange();
 		
@@ -67,6 +71,9 @@ public class ZeCameraPreview extends SurfaceView implements SurfaceHolder.Callba
 	public void surfaceDestroyed(SurfaceHolder arg0) {
 		// TODO Auto-generated method stub
 		System.out.println("SurfaceDestroyed Callback");
+		camera.stopPreview();
+		camera.setPreviewCallback(null);
+		camera.release();
 	}
 	
     private int findFrontFacingCamera() {
@@ -84,6 +91,5 @@ public class ZeCameraPreview extends SurfaceView implements SurfaceHolder.Callba
         }
         return cameraId;
       }
-
 
 }

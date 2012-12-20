@@ -4,6 +4,7 @@ import android.app.Service;
 import android.content.Intent;
 import android.os.IBinder;
 import android.util.Log;
+import android.os.Process;
 
 public class ZeSenseSensorService extends Service {
 	
@@ -41,7 +42,7 @@ public class ZeSenseSensorService extends Service {
 	// Avoid blocking the main UI thread in which the service is running
 	private final class ZeSenseSensorThread extends Thread {
 		private static final String TAG = "ZeSenseSensorThread";
-	    
+		
 		@Override
 		public void run() {
 			Log.i(TAG, "Inside ZeSenseSensorThread!");

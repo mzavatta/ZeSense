@@ -15,5 +15,4 @@ public class ZeCameraCallbacks implements Camera.PreviewCallback {
 		//System.out.println("diff "+Long.toString(currentTime-previousTime));
 		previousTime = currentTime;
 	}
-
 }
