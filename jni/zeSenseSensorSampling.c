@@ -53,14 +53,14 @@ enum {
 #define ZESENSE_SENSOR_TYPE_PRESSURE		6
 
 // Global experiment settings
-#define ZS_EXPERIMENT_DURATION 20 //Seconds
+#define ZS_EXPERIMENT_DURATION 200 //Seconds
 //#define ZS_EXPERIMENT_MULTIPLE 1
 #define ZS_EXPERIMENT_PRIORITY (0) //Nice values. More negative means more processor time.
 #define LOGPATH "/sdcard/zesenselog.txt"
 
 // Accelerometer settings ASENSOR_TYPE_ACCELEROMETER
-#define ACCEL_ON 1
-#define ACCEL_HZ 50 //Hz
+//#define ACCEL_ON 1
+#define ACCEL_HZ 40 //Hz
 #define NUM_ACCEL_SAMPLES (ACCEL_HZ*ZS_EXPERIMENT_DURATION)
 
 // Gyro settings ASENSOR_TYPE_GYROSCOPE
@@ -84,7 +84,7 @@ enum {
 #define NUM_PROX_SAMPLES (PROX_HZ*ZS_EXPERIMENT_DURATION)
 
 // Orientation sensor ZESENSE_SENSOR_TYPE_ORIENTATION
-//#define ORIENT_ON 1
+#define ORIENT_ON 1
 #define ORIENT_HZ 20 //Hz
 #define NUM_ORIENT_SAMPLES (ORIENT_HZ*ZS_EXPERIMENT_DURATION)
 
@@ -94,7 +94,7 @@ enum {
 #define NUM_PRES_SAMPLES (PRES_HZ*ZS_EXPERIMENT_DURATION)
 
 #ifndef ZS_EXPERIMENT_MULTIPLE
-#define NUM_SAMPLES NUM_ACCEL_SAMPLES
+#define NUM_SAMPLES NUM_ORIENT_SAMPLES
 #endif
 
 struct zs_ASensorEvent {
@@ -283,6 +283,25 @@ void Java_eu_tb_zesense_ZeSenseSensorService_zeSense_1SamplingNative(JNIEnv* env
     }
 #endif
 
+#ifdef ORIENT_ON
+    // Grab the sensor description
+    const ASensor* orientSensor;
+    orientSensor = ASensorManager_getDefaultSensor(sensorManager, ZESENSE_SENSOR_TYPE_ORIENTATION);
+
+    // Start monitoring the sensor
+    if (orientSensor != NULL) {
+    	LOGI("got orientation sensor (fused)");
+        ASensorEventQueue_enableSensor(sensorEventQueue, orientSensor);
+        ASensorEventQueue_setEventRate(sensorEventQueue, orientSensor, (1000L/ORIENT_HZ)*1000);
+    }
+    else {
+    	LOGW("orientation sensor NULL");
+    	exit(1);
+    }
+#endif
+
+//TODO: ORIENT_ON
+
 #ifndef ZS_EXPERIMENT_MULTIPLE
     int event_counter = 0;
     ASensorEvent event;
@@ -295,16 +314,19 @@ void Java_eu_tb_zesense_ZeSenseSensorService_zeSense_1SamplingNative(JNIEnv* env
 
     while (event_counter < NUM_SAMPLES) {
     	if (ASensorEventQueue_getEvents(sensorEventQueue, &event, 1) > 0) {
-			if (event.type == ASENSOR_TYPE_ACCELEROMETER) { //TODO: redundant check
+			if (event.type == ZESENSE_SENSOR_TYPE_ORIENTATION) { //TODO: redundant check
 				// place event into the list
             	experiment.events_list[event_counter].event = event;
             	// get and assign the collection timestamp
             	clock_gettime(CLOCK_MONOTONIC, &experiment.events_list[event_counter].collectionTimestamp);
             	uint64_t h = (experiment.events_list[event_counter].collectionTimestamp.tv_sec*1000000000LL)
             			+experiment.events_list[event_counter].collectionTimestamp.tv_nsec;
-				LOGI("accelerometer: x=%f y=%f z=%f",
+				/*LOGI("accel: x=%f y=%f z=%f",
 						event.acceleration.x, event.acceleration.y,
-						event.acceleration.z);
+						event.acceleration.z);*/
+            	LOGI("orient: azi=%f pitch=%f roll=%f",
+            			event.vector.azimuth, event.vector.pitch,
+            			event.vector.roll);
 			}
         	event_counter++;
     	}
@@ -457,7 +479,6 @@ double dispersion_twopass(int type, int64_t average, int64_t* array, int length)
 		incSum = incSum + scartoq;
 		//LOGI("incsum %lld", incSum);
 	}
-	LOGI("dispersion loop ended, i=%d", i);
 	if (type==1) return (incSum/length); //return variance
 	else if (type==2) return sqrt(incSum/length); //return stddev
 	else return -1;
@@ -491,11 +512,11 @@ double dispersion_welford(int64_t* array, int length) {
  * - Average, standard deviation of delay between generation and collection
  * - Better to do in Excel: drift over time (like, 10 mins) of the average sampling rate computed
  * for example in such a way: take 10 mins of samples, take the average sampling rate
- * (cannot assume it aseven if you specify 10Hz the system might give you more or less,
+ * (cannot assume it as even if you specify 10Hz the system might give you more or less,
  * take the first sample time and project where the others should have been according to
  * that rate average, finally get the difference between the projected and the actual samples.
  * (wait but isn't the average affected by this drift itself? maybe take the average on the first half
- * of the samples and see the behaviour of the other half? is there already a statistical definition for
+ * of the samples and see the behavior of the other half? is there already a statistical definition for
  * that?)
  * - even more interesting this drift for the propagation delay of the event from HW to UserSpace
  * Do this for all the sensors that we have, in isolation and together, for different requested
