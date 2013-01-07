@@ -53,13 +53,14 @@ enum {
 #define ZESENSE_SENSOR_TYPE_PRESSURE		6
 
 // Global experiment settings
-#define ZS_EXPERIMENT_DURATION 30 //Seconds
+#define ZS_EXPERIMENT_DURATION 5 //Seconds
 //#define ZS_EXPERIMENT_MULTIPLE 1
-#define ZS_EXPERIMENT_PRIORITY (-20) //Nice values. More negative means more processor time.
+#define ZS_EXPERIMENT_PRIORITY (0) //Nice values. More negative means more processor time.
+#define LOGPATH "/sdcard/zesenselog.txt"
 
 // Accelerometer settings ASENSOR_TYPE_ACCELEROMETER
 #define ACCEL_ON 1
-#define ACCEL_HZ 150 //Hz
+#define ACCEL_HZ 20 //Hz
 #define NUM_ACCEL_SAMPLES (ACCEL_HZ*ZS_EXPERIMENT_DURATION)
 
 // Gyro settings ASENSOR_TYPE_GYROSCOPE
@@ -116,12 +117,17 @@ struct zs_ASensorEvent {
 #endif
 
 
+	// Global file handle for logging
+	FILE *logfd;
+
 
 void zs_statistics();
 
 void Java_eu_tb_zesense_ZeSenseSensorService_zeSense_1SamplingNative(JNIEnv* env, jobject thiz) {
 
 	LOGI("Hello from zs_SamplingNative");
+	time_t lt;
+	lt = time(NULL);
 
 	// Set up sensor sampling infrastructure:
 	// the looper monitors a set of fds and feeds events to a sensor event queue
@@ -160,8 +166,20 @@ void Java_eu_tb_zesense_ZeSenseSensorService_zeSense_1SamplingNative(JNIEnv* env
     	}
     } else LOGI("New priority unchanged");
 
-    // Wait 5 seconds before starting
-    sleep(5);
+    // Open log file
+	char *logpath = LOGPATH;
+	logfd = fopen(logpath,"ab");
+	if(logfd == NULL) {
+		LOGW("unable to open %s", logpath);
+		exit(1);
+	}
+	else LOGI("success opening %s", logpath);
+
+	// Log experiment start time
+	if (fputs(ctime(&lt), logfd)<0) LOGW("write failed");
+
+    // Wait some time before starting
+    sleep(3);
 
 #ifdef ACCEL_ON
     // Grab the sensor description
@@ -472,6 +490,7 @@ double dispersion(int type, int64_t average, int64_t* array, int length) {
 void zs_statistics() {
 
 	int j = 0; //iterator for the arrays
+	char logstr[100];
 
 	/*
 	 * EVENT GENERATION FREQUENCY (input subsystem timestamps)
@@ -501,7 +520,8 @@ void zs_statistics() {
 	//for (k=0; k<(NUM_SAMPLES-1); k++) LOGI("%llu", genAccelPeriods[k]);
 
 	genAccelStddev = dispersion(2, genAccelAvgPeriods, genAccelPeriods, (NUM_SAMPLES-1));
-
+	sprintf(logstr, "%e %e ",  genAccelAvgPeriods/1000000, genAccelStddev/1000000);
+	if (fputs(logstr, logfd)<0) LOGW("write file failed");
 	LOGI("Generation Average = %e, Stddev = %e\n"
 			"Sd/Av= %e",  genAccelAvgPeriods/1000000, genAccelStddev/1000000, genAccelStddev/genAccelAvgPeriods);
 
@@ -526,8 +546,9 @@ void zs_statistics() {
 	}
 	collAccelAvgPeriods = (double)collAccelIncSum/(NUM_SAMPLES-1);
 	collAccelStddev = dispersion(2, collAccelAvgPeriods, collAccelPeriods, (NUM_SAMPLES-1));
-	LOGI("Consumption Average = %e, Stddev = %e\n"
-			"Sd/Av= %e",  collAccelAvgPeriods/1000000, collAccelStddev/1000000, collAccelStddev/collAccelAvgPeriods);
+	sprintf(logstr, "%e %e ",  collAccelAvgPeriods/1000000, collAccelStddev/1000000);
+	if (fputs(logstr, logfd)<0) LOGW("write file failed");
+	LOGI("Consumption Average = %e, Stddev = %e\n",  collAccelAvgPeriods/1000000, collAccelStddev/1000000);
 
 	/*
 	 * EVENT PROPAGATION DELAY
@@ -552,6 +573,9 @@ void zs_statistics() {
 
 	travelAccelAvg = (double)travelAccelIncSum/(NUM_SAMPLES);
 	travelAccelStddev = dispersion(2, travelAccelAvg, travelAccelSeries, (NUM_SAMPLES));
-
+	sprintf(logstr, "%e %e", travelAccelAvg, travelAccelStddev);
+	if (fputs(logstr, logfd)<0) LOGW("write file failed");
 	LOGI("Travel Average = %e, stddev %e", travelAccelAvg, travelAccelStddev);
+
+	fclose(logfd);
 }
