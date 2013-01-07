@@ -53,8 +53,8 @@ enum {
 #define ZESENSE_SENSOR_TYPE_PRESSURE		6
 
 // Global experiment settings
-#define ZS_EXPERIMENT_DURATION 200 //Seconds
-//#define ZS_EXPERIMENT_MULTIPLE 1
+#define ZS_EXPERIMENT_DURATION 2 //Seconds
+#define ZS_EXPERIMENT_MULTIPLE 1
 #define ZS_EXPERIMENT_PRIORITY (0) //Nice values. More negative means more processor time.
 #define LOGPATH "/sdcard/zesenselog.txt"
 
@@ -112,16 +112,14 @@ struct zs_ASensorEvent {
 	struct zs_experiment_single experiment; // Experiment state, using a global is more handy
 #else
 	//TODO: structure for experiment_multiple
-
 	int experimenting = 1; // Flag to reset when the experiment timer expires
 #endif
-
 
 	// Global file handle for logging
 	FILE *logfd;
 
-
 void zs_statistics();
+void experiment_multi_timeout(int signum);
 
 void Java_eu_tb_zesense_ZeSenseSensorService_zeSense_1SamplingNative(JNIEnv* env, jobject thiz) {
 
@@ -300,8 +298,6 @@ void Java_eu_tb_zesense_ZeSenseSensorService_zeSense_1SamplingNative(JNIEnv* env
     }
 #endif
 
-//TODO: ORIENT_ON
-
 #ifndef ZS_EXPERIMENT_MULTIPLE
     int event_counter = 0;
     ASensorEvent event;
@@ -350,12 +346,36 @@ void Java_eu_tb_zesense_ZeSenseSensorService_zeSense_1SamplingNative(JNIEnv* env
 	// Now start the statistics
 	zs_statistics();
 
-#else // Use a timeout as long as ZS_EXPERIMENT_DURATION
+#else // Take samples for ZS_EXPERIMENT_DURATION time. Use a timeout to stop.
 
-	//TODO: if i don't know how many samples I'm taking, I have to use malloc
-	// to store them in an array
+	/*
+	//TODO: if I don't know how many samples I'm taking, I have to use malloc
+	// to store them in an array.
+	//XXX: abandon the idea. too complex, data arrives very quickly, need to reallocate a lot
+	// not worth the effort to control the reallocation failures
+	int event_list_chunk = 1000;
+	int event_list_allocated_chunks = 0;
+	int event_list_index = 0;
+	struct zs_ASensorEvent *multi_event_list;
+	struct zs_ASensorEvent *realloc_safety;
+	multi_event_list = (struct zs_ASensorEvent *) malloc(event_list_chunk * sizeof(struct zs_ASensorEvent));
+	event_list_allocated_chunks++;
+	mystruct* realloc_safety = realloc(multi_event_list, event_list_chunk * sizeof(struct zs_ASensorEvent));
+	if (realloc_safety && realloc_safety == multi_event_list) {
+	   myarray = myrealloced_array;
+	} else {
+	   // deal with realloc failing because memory could not be allocated.
+	}
+	// Free dynamically allocated memory
+    free(multi_event_list);
+	*/
 
-	//TODO: register timer, handler is experiment_multi_timeout
+	//TODO: To cope with the storage of an unknown number of samples, allocate a very big array
+	// statically and exit as soon as the timer expires or the array spots run out
+
+	// Register timer, handler is experiment_multi_timeout()
+	signal(SIGALRM, (void (*)(int)) experiment_multi_timeout);
+	alarm(ZS_EXPERIMENT_DURATION);
 
     ASensorEvent event;
     while(experimenting) {
@@ -395,6 +415,8 @@ void Java_eu_tb_zesense_ZeSenseSensorService_zeSense_1SamplingNative(JNIEnv* env
 			}
 		}
     }
+
+
 #endif
     //return (*env)->NewStringUTF(env, "Hello from JNI !");
 
@@ -402,7 +424,7 @@ void Java_eu_tb_zesense_ZeSenseSensorService_zeSense_1SamplingNative(JNIEnv* env
 	fclose(logfd);
 }
 
-#ifdef EXPERIMENT_MUTIPLE
+#ifdef ZS_EXPERIMENT_MULTIPLE
 void experiment_multi_timeout(int signum) {
 	if (experimenting == 0)
 		experimenting = 1;
@@ -410,6 +432,7 @@ void experiment_multi_timeout(int signum) {
 		LOGW("error, timeout experiment fired, but not experimenting");
 		exit(1);
 	}
+}
 #endif
 
 // Copied from http://www.gnu.org/software/libc/manual/html_node/Elapsed-Time.html
@@ -435,6 +458,7 @@ int timeval_subtract (result, x, y)	struct timeval *result, *x, *y; {
 	return x->tv_sec < y->tv_sec;
 }
 
+#ifndef ZS_EXPERIMENT_MULTIPLE
 /*
  * Take periods of the series array and place them in periods
  * s0, s1... sn -> p0, p1... pn-1
@@ -627,3 +651,4 @@ void zs_statistics() {
 	if (fputs(logstr, logfd)<0) LOGW("write file failed");
 	LOGI("Travel Average = %e, Stddev %e", travelAccelAvg, travelAccelStddev);
 }
+#endif
