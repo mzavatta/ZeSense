@@ -53,14 +53,14 @@ enum {
 #define ZESENSE_SENSOR_TYPE_PRESSURE		6
 
 // Global experiment settings
-#define ZS_EXPERIMENT_DURATION 5 //Seconds
+#define ZS_EXPERIMENT_DURATION 20 //Seconds
 //#define ZS_EXPERIMENT_MULTIPLE 1
 #define ZS_EXPERIMENT_PRIORITY (0) //Nice values. More negative means more processor time.
 #define LOGPATH "/sdcard/zesenselog.txt"
 
 // Accelerometer settings ASENSOR_TYPE_ACCELEROMETER
 #define ACCEL_ON 1
-#define ACCEL_HZ 20 //Hz
+#define ACCEL_HZ 50 //Hz
 #define NUM_ACCEL_SAMPLES (ACCEL_HZ*ZS_EXPERIMENT_DURATION)
 
 // Gyro settings ASENSOR_TYPE_GYROSCOPE
@@ -375,6 +375,9 @@ void Java_eu_tb_zesense_ZeSenseSensorService_zeSense_1SamplingNative(JNIEnv* env
     }
 #endif
     //return (*env)->NewStringUTF(env, "Hello from JNI !");
+
+    // Close log file
+	fclose(logfd);
 }
 
 #ifdef EXPERIMENT_MUTIPLE
@@ -435,9 +438,10 @@ void periods(int64_t* series, int seriesLength, int64_t* periods) {
 	LOGI("periods loop ended, i=%d", i);
 }
 /*
- * Standard deviation (type=1) or variance (type=2) calculator
+ * Variance (type=1) or standard deviation (type=2) calculator with two-pass
  */
-double dispersion(int type, int64_t average, int64_t* array, int length) {
+double dispersion_twopass(int type, int64_t average, int64_t* array, int length) {
+
 	int i = 0;
 	int64_t incSum = 0;
 	int64_t scarto, scartoq;
@@ -457,6 +461,27 @@ double dispersion(int type, int64_t average, int64_t* array, int length) {
 	if (type==1) return (incSum/length); //return variance
 	else if (type==2) return sqrt(incSum/length); //return stddev
 	else return -1;
+
+}
+
+/*
+ * Standard deviation calculator with Welford's algorithm
+ */
+double dispersion_welford(int64_t* array, int length) {
+
+	int i=0;
+	int64_t delta;
+	int64_t mean = 0;
+	int64_t m2 = 0;
+
+	for (i=1; i<length+1; i++) {
+		delta = array[i-1] - mean;
+		mean = mean + (delta/i);
+		m2 = m2 + (delta*(array[i-1]-mean));
+	}
+
+	return sqrt(m2/(i-1));
+	//return (m2/(i-1));
 }
 
 /*
@@ -511,6 +536,8 @@ void zs_statistics() {
 	}
 	periods(genAccelSeries, NUM_SAMPLES, genAccelPeriods);
 	for (j=0; j<NUM_SAMPLES-1; j++) {
+		//sprintf(logstr, "%d\n",  genAccelPeriods[j]);
+		//if (fputs(logstr, logfd)<0) LOGW("write file failed");
 		genAccelIncSum = genAccelIncSum + genAccelPeriods[j];
 	}
 	// get average and stddev
@@ -519,11 +546,11 @@ void zs_statistics() {
 	//int k;
 	//for (k=0; k<(NUM_SAMPLES-1); k++) LOGI("%llu", genAccelPeriods[k]);
 
-	genAccelStddev = dispersion(2, genAccelAvgPeriods, genAccelPeriods, (NUM_SAMPLES-1));
+	//genAccelStddev = dispersion_twopass(2, genAccelAvgPeriods, genAccelPeriods, (NUM_SAMPLES-1));
+	genAccelStddev = dispersion_welford(genAccelPeriods, (NUM_SAMPLES-1));
 	sprintf(logstr, "%e %e ",  genAccelAvgPeriods/1000000, genAccelStddev/1000000);
 	if (fputs(logstr, logfd)<0) LOGW("write file failed");
-	LOGI("Generation Average = %e, Stddev = %e\n"
-			"Sd/Av= %e",  genAccelAvgPeriods/1000000, genAccelStddev/1000000, genAccelStddev/genAccelAvgPeriods);
+	LOGI("Generation Average = %e, Stddev = %e",  genAccelAvgPeriods/1000000, genAccelStddev/1000000);
 
 
 	/*
@@ -545,10 +572,11 @@ void zs_statistics() {
 		collAccelIncSum = collAccelIncSum + collAccelPeriods[j];
 	}
 	collAccelAvgPeriods = (double)collAccelIncSum/(NUM_SAMPLES-1);
-	collAccelStddev = dispersion(2, collAccelAvgPeriods, collAccelPeriods, (NUM_SAMPLES-1));
+	//collAccelStddev = dispersion_twopass(2, collAccelAvgPeriods, collAccelPeriods, (NUM_SAMPLES-1));
+	collAccelStddev = dispersion_welford(collAccelPeriods, (NUM_SAMPLES-1));
 	sprintf(logstr, "%e %e ",  collAccelAvgPeriods/1000000, collAccelStddev/1000000);
 	if (fputs(logstr, logfd)<0) LOGW("write file failed");
-	LOGI("Consumption Average = %e, Stddev = %e\n",  collAccelAvgPeriods/1000000, collAccelStddev/1000000);
+	LOGI("Consumption Average = %e, Stddev = %e",  collAccelAvgPeriods/1000000, collAccelStddev/1000000);
 
 	/*
 	 * EVENT PROPAGATION DELAY
@@ -572,10 +600,9 @@ void zs_statistics() {
 	}
 
 	travelAccelAvg = (double)travelAccelIncSum/(NUM_SAMPLES);
-	travelAccelStddev = dispersion(2, travelAccelAvg, travelAccelSeries, (NUM_SAMPLES));
-	sprintf(logstr, "%e %e", travelAccelAvg, travelAccelStddev);
+	//travelAccelStddev = dispersion_twopass(2, travelAccelAvg, travelAccelSeries, (NUM_SAMPLES));
+	travelAccelStddev = dispersion_welford(travelAccelSeries, NUM_SAMPLES);
+	sprintf(logstr, "%e %e\n", travelAccelAvg, travelAccelStddev);
 	if (fputs(logstr, logfd)<0) LOGW("write file failed");
-	LOGI("Travel Average = %e, stddev %e", travelAccelAvg, travelAccelStddev);
-
-	fclose(logfd);
+	LOGI("Travel Average = %e, Stddev %e", travelAccelAvg, travelAccelStddev);
 }
