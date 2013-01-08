@@ -53,19 +53,19 @@ enum {
 #define ZESENSE_SENSOR_TYPE_PRESSURE		6
 
 // Global experiment settings
-#define ZS_EXPERIMENT_DURATION 2 //Seconds
+#define ZS_EXPERIMENT_DURATION 7 //Seconds
 #define ZS_EXPERIMENT_MULTIPLE 1
 #define ZS_EXPERIMENT_PRIORITY (0) //Nice values. More negative means more processor time.
 #define LOGPATH "/sdcard/zesenselog.txt"
 
 // Accelerometer settings ASENSOR_TYPE_ACCELEROMETER
-//#define ACCEL_ON 1
-#define ACCEL_HZ 40 //Hz
+#define ACCEL_ON 1
+#define ACCEL_HZ 20 //Hz
 #define NUM_ACCEL_SAMPLES (ACCEL_HZ*ZS_EXPERIMENT_DURATION)
 
 // Gyro settings ASENSOR_TYPE_GYROSCOPE
-//#define GYRO_ON 1
-#define GYRO_HZ 50 //Hz
+#define GYRO_ON 1
+#define GYRO_HZ 20 //Hz
 #define NUM_GYRO_SAMPLES (GYRO_HZ*ZS_EXPERIMENT_DURATION)
 
 // Light settings ASENSOR_TYPE_LIGHT
@@ -94,7 +94,9 @@ enum {
 #define NUM_PRES_SAMPLES (PRES_HZ*ZS_EXPERIMENT_DURATION)
 
 #ifndef ZS_EXPERIMENT_MULTIPLE
-#define NUM_SAMPLES NUM_ORIENT_SAMPLES
+#define NUM_SAMPLES NUM_ACCEL_SAMPLES
+#else
+#define NUM_SAMPLES 2000
 #endif
 
 struct zs_ASensorEvent {
@@ -112,8 +114,12 @@ struct zs_ASensorEvent {
 	struct zs_experiment_single experiment; // Experiment state, using a global is more handy
 #else
 	//TODO: structure for experiment_multiple
-	int experimenting = 1; // Flag to reset when the experiment timer expires
+	struct zs_ASensorEvent events_list[NUM_SAMPLES];
+	int experimenting; // Flag to set at startup and reset when the experiment timer expires
 #endif
+
+	// Global event counter
+	int event_counter = 0;
 
 	// Global file handle for logging
 	FILE *logfd;
@@ -299,36 +305,37 @@ void Java_eu_tb_zesense_ZeSenseSensorService_zeSense_1SamplingNative(JNIEnv* env
 #endif
 
 #ifndef ZS_EXPERIMENT_MULTIPLE
-    int event_counter = 0;
+
     ASensorEvent event;
     struct timeval start_time, stop_time, diff;
     int64_t duration_time;
     double average_frequency;
+
+    event_counter = 0;
 
     // Experiment start time
 	if(gettimeofday(&start_time, NULL)!=0) LOGW("Failed start_time gettimeofday()");
 
     while (event_counter < NUM_SAMPLES) {
     	if (ASensorEventQueue_getEvents(sensorEventQueue, &event, 1) > 0) {
-			if (event.type == ZESENSE_SENSOR_TYPE_ORIENTATION) { //TODO: redundant check
+			if (event.type == ASENSOR_TYPE_ACCELEROMETER) { //TODO: redundant check
 				// place event into the list
             	experiment.events_list[event_counter].event = event;
             	// get and assign the collection timestamp
             	clock_gettime(CLOCK_MONOTONIC, &experiment.events_list[event_counter].collectionTimestamp);
             	uint64_t h = (experiment.events_list[event_counter].collectionTimestamp.tv_sec*1000000000LL)
             			+experiment.events_list[event_counter].collectionTimestamp.tv_nsec;
-				/*LOGI("accel: x=%f y=%f z=%f",
+				LOGI("accel: x=%f y=%f z=%f",
 						event.acceleration.x, event.acceleration.y,
-						event.acceleration.z);*/
-            	LOGI("orient: azi=%f pitch=%f roll=%f",
+						event.acceleration.z);
+            	//LOGI("sensor%d, type%d", event.sensor, event.type);
+            	/*LOGI("orient: azi=%f pitch=%f roll=%f",
             			event.vector.azimuth, event.vector.pitch,
-            			event.vector.roll);
+            			event.vector.roll);*/
 			}
         	event_counter++;
     	}
     }
-
-    LOGI("event_counter=%d",event_counter);
 
     // Experiment end time
 	if(gettimeofday(&stop_time, NULL)!=0) LOGW("Failed stop_time gettimeofday()");
@@ -348,73 +355,92 @@ void Java_eu_tb_zesense_ZeSenseSensorService_zeSense_1SamplingNative(JNIEnv* env
 
 #else // Take samples for ZS_EXPERIMENT_DURATION time. Use a timeout to stop.
 
-	/*
-	//TODO: if I don't know how many samples I'm taking, I have to use malloc
-	// to store them in an array.
-	//XXX: abandon the idea. too complex, data arrives very quickly, need to reallocate a lot
-	// not worth the effort to control the reallocation failures
-	int event_list_chunk = 1000;
-	int event_list_allocated_chunks = 0;
-	int event_list_index = 0;
-	struct zs_ASensorEvent *multi_event_list;
-	struct zs_ASensorEvent *realloc_safety;
-	multi_event_list = (struct zs_ASensorEvent *) malloc(event_list_chunk * sizeof(struct zs_ASensorEvent));
-	event_list_allocated_chunks++;
-	mystruct* realloc_safety = realloc(multi_event_list, event_list_chunk * sizeof(struct zs_ASensorEvent));
-	if (realloc_safety && realloc_safety == multi_event_list) {
-	   myarray = myrealloced_array;
-	} else {
-	   // deal with realloc failing because memory could not be allocated.
-	}
-	// Free dynamically allocated memory
-    free(multi_event_list);
-	*/
-
 	//TODO: To cope with the storage of an unknown number of samples, allocate a very big array
 	// statically and exit as soon as the timer expires or the array spots run out
+	event_counter = 0;
 
 	// Register timer, handler is experiment_multi_timeout()
 	signal(SIGALRM, (void (*)(int)) experiment_multi_timeout);
 	alarm(ZS_EXPERIMENT_DURATION);
 
+	// Set start experiment flag
+	experimenting = 1;
+
     ASensorEvent event;
-    while(experimenting) {
+    while(experimenting==1 && event_counter<NUM_SAMPLES) {
 		if (ASensorEventQueue_getEvents(sensorEventQueue, &event, 1) > 0) {
 
-			LOGI("sensor event from sensor%d", event.sensor);
+			LOGI("sensor event from sensor%d, type%d", event.sensor, event.type);
 
 			if (event.type == ASENSOR_TYPE_ACCELEROMETER) {
-				LOGI("accelerometer: x=%f y=%f z=%f",
+				LOGI("event accelerometer: x=%f y=%f z=%f",
 						event.acceleration.x, event.acceleration.y,
 						event.acceleration.z);
+				events_list[event_counter].event = event;
+            	clock_gettime(CLOCK_MONOTONIC, &events_list[event_counter].collectionTimestamp);
 			}
 
-			if (event.type == ASENSOR_TYPE_GYROSCOPE) {
-				LOGI("gyro: x=%f y=%f z=%f",
+			else if (event.type == ASENSOR_TYPE_GYROSCOPE) {
+				LOGI("event gyro: x=%f y=%f z=%f",
 						event.vector.x, event.vector.y,
 						event.vector.z);
+				events_list[event_counter].event = event;
+            	clock_gettime(CLOCK_MONOTONIC, &events_list[event_counter].collectionTimestamp);
 			}
 
-			if (event.type == ASENSOR_TYPE_LIGHT) {
-				LOGI("light: l=%f", event.light);
+			else if (event.type == ASENSOR_TYPE_LIGHT) {
+				LOGI("event light: l=%f", event.light);
+				events_list[event_counter].event = event;
+            	clock_gettime(CLOCK_MONOTONIC, &events_list[event_counter].collectionTimestamp);
 			}
 
-			if (event.type == ASENSOR_TYPE_MAGNETIC_FIELD) {
-				LOGI("mag: x=%f y=%f z=%f",
+			else if (event.type == ASENSOR_TYPE_MAGNETIC_FIELD) {
+				LOGI("event mag: x=%f y=%f z=%f",
 						event.magnetic.x, event.magnetic.y,
 						event.magnetic.z);
+				events_list[event_counter].event = event;
+            	clock_gettime(CLOCK_MONOTONIC, &events_list[event_counter].collectionTimestamp);
 			}
 
-			if (event.type == ASENSOR_TYPE_PROXIMITY) {
-				LOGI("prox: p=%f", event.distance);
+			else if (event.type == ASENSOR_TYPE_PROXIMITY) {
+				LOGI("event prox: p=%f", event.distance);
 				//ASensorEventQueue_enableSensor(sensorEventQueue, proxSensor); //shouldn't be necessary
+				events_list[event_counter].event = event;
+            	clock_gettime(CLOCK_MONOTONIC, &events_list[event_counter].collectionTimestamp);
 			}
 
-			if (event.type == ZESENSE_SENSOR_TYPE_PRESSURE) {
-				LOGI("pressure: p=%f", event.pressure);
+			else if (event.type == ZESENSE_SENSOR_TYPE_PRESSURE) {
+				LOGI("event pressure: p=%f", event.pressure);
+				events_list[event_counter].event = event;
+            	clock_gettime(CLOCK_MONOTONIC, &events_list[event_counter].collectionTimestamp);
 			}
+
+			else if (event.type = ZESENSE_SENSOR_TYPE_ORIENTATION) {
+            	LOGI("event orient: azi=%f pitch=%f roll=%f",
+            			event.vector.azimuth, event.vector.pitch,
+            			event.vector.roll);
+				events_list[event_counter].event = event;
+            	clock_gettime(CLOCK_MONOTONIC, &events_list[event_counter].collectionTimestamp);
+			}
+
+			else {
+				LOGW("SENSOR EVENT NOT RECOGNIZED!");
+				exit(1);
+			}
+
+			// Increment event counter
+			event_counter++;
 		}
     }
+
+    if (event_counter==NUM_SAMPLES) {
+    	LOGI("alarm not fired but ran out of array spots");
+    	alarm(0); //deactivate the alarm, which has not yet fired
+    	experimenting = 0;
+    }
+
+	// Now start the statistics
+	zs_statistics();
 
 
 #endif
@@ -426,10 +452,13 @@ void Java_eu_tb_zesense_ZeSenseSensorService_zeSense_1SamplingNative(JNIEnv* env
 
 #ifdef ZS_EXPERIMENT_MULTIPLE
 void experiment_multi_timeout(int signum) {
-	if (experimenting == 0)
-		experimenting = 1;
+	signal(SIGALRM, SIG_DFL); //back to default action for SIGALRM
+	if (experimenting == 1) {
+		experimenting = 0;
+		LOGI("alarm fired, event_counter=%d, NUM_SAMPLES=%d", event_counter, NUM_SAMPLES);
+	}
 	else {
-		LOGW("error, timeout experiment fired, but not experimenting");
+		LOGW("error, alarm experiment fired, but not experimenting");
 		exit(1);
 	}
 }
@@ -458,7 +487,7 @@ int timeval_subtract (result, x, y)	struct timeval *result, *x, *y; {
 	return x->tv_sec < y->tv_sec;
 }
 
-#ifndef ZS_EXPERIMENT_MULTIPLE
+
 /*
  * Take periods of the series array and place them in periods
  * s0, s1... sn -> p0, p1... pn-1
@@ -484,50 +513,40 @@ void periods(int64_t* series, int seriesLength, int64_t* periods) {
 	LOGI("periods loop ended, i=%d", i);
 }
 /*
- * Variance (type=1) or standard deviation (type=2) calculator with two-pass
+ * Variance (type=1) or standard deviation (type=2) calculator with two-pass algorithm
  */
 double dispersion_twopass(int type, int64_t average, int64_t* array, int length) {
-
 	int i = 0;
 	int64_t incSum = 0;
 	int64_t scarto, scartoq;
 	LOGI("average %ld", average);
-	//take difference from average, square it and compound
 	for (i=0; i<length; i++) {
-
-		//LOGI("array %lld",array[i]);
 		scarto = average-array[i];
-		//LOGI("scarto %lld", scarto);
 		scartoq = pow(scarto, 2);
-		//LOGI("%lld", scartoq);
 		incSum = incSum + scartoq;
-		//LOGI("incsum %lld", incSum);
 	}
 	if (type==1) return (incSum/length); //return variance
 	else if (type==2) return sqrt(incSum/length); //return stddev
 	else return -1;
-
 }
 
 /*
  * Standard deviation calculator with Welford's algorithm
  */
 double dispersion_welford(int64_t* array, int length) {
-
 	int i=0;
 	int64_t delta;
 	int64_t mean = 0;
 	int64_t m2 = 0;
-
 	for (i=1; i<length+1; i++) {
 		delta = array[i-1] - mean;
 		mean = mean + (delta/i);
 		m2 = m2 + (delta*(array[i-1]-mean));
 	}
-
 	return sqrt(m2/(i-1));
 	//return (m2/(i-1));
 }
+
 
 /*
  * Statistics routine computes:
@@ -558,7 +577,7 @@ double dispersion_welford(int64_t* array, int length) {
  *
  */
 void zs_statistics() {
-
+#ifndef ZS_EXPERIMENT_MULTIPLE
 	int j = 0; //iterator for the arrays
 	char logstr[100];
 
@@ -650,5 +669,77 @@ void zs_statistics() {
 	sprintf(logstr, "%e %e\n", travelAccelAvg, travelAccelStddev);
 	if (fputs(logstr, logfd)<0) LOGW("write file failed");
 	LOGI("Travel Average = %e, Stddev %e", travelAccelAvg, travelAccelStddev);
-}
+
+#else
+
+	int accel_count = 0;
+	double accelAvg, accelStddev;
+	int64_t genAccelPeriod, genAccelIncSum = 0;
+	struct zs_ASensorEvent accel_prev_event;
+
+	int gyro_count = 0;
+	double gyroAvg, gyroStddev;
+	int64_t genGyroPeriod, genGyroIncSum = 0;
+	struct zs_ASensorEvent gyro_prev_event;
+
+	int orient_count = 0;
+	double orientAvg, orientStddev;
+	int64_t genOrientPeriod, genOrientIncSum = 0;
+	struct zs_ASensorEvent orient_prev_event;
+
+	int j=0;
+	for (j=0; j<event_counter; j++) {
+
+		if (events_list[j].event.type == ASENSOR_TYPE_ACCELEROMETER) {
+			//LOGI("accel sample found");
+			//LOGI("TIMESTAMP %llu", events_list[j].event.timestamp);
+			if (accel_count != 0) {
+				genAccelPeriod = events_list[j].event.timestamp - accel_prev_event.event.timestamp;
+				LOGI("gen accel period %llu", genAccelPeriod);
+				genAccelIncSum = genAccelIncSum + genAccelPeriod;
+			}
+			accel_prev_event.event = events_list[j].event;
+			accel_count++;
+		}
+
+		if (events_list[j].event.type == ASENSOR_TYPE_GYROSCOPE) {
+			//LOGI("gyro sample found");
+			if (gyro_count != 0) {
+				genGyroPeriod = events_list[j].event.timestamp - gyro_prev_event.event.timestamp;
+				LOGI("gen gyro period %llu", genGyroPeriod);
+				genGyroIncSum = genGyroIncSum + genGyroPeriod;
+			}
+			gyro_prev_event.event = events_list[j].event;
+			gyro_count++;
+		}
+
+		if (events_list[j].event.type == ZESENSE_SENSOR_TYPE_ORIENTATION) {
+			//LOGI("orient sample found");
+			if (orient_count != 0) {
+				genOrientPeriod = events_list[j].event.timestamp - orient_prev_event.event.timestamp;
+				LOGI("gen orient period %llu", genOrientPeriod);
+				genOrientIncSum = genOrientIncSum + genOrientPeriod;
+			}
+			orient_prev_event.event = events_list[j].event;
+			orient_count++;
+		}
+
+	}
+
+	// Ensure we got and recognized all events
+	if (accel_count+gyro_count+orient_count!=event_counter) {
+		LOGW("Sum of single events does not add up to total events");
+		exit(1);
+	}
+
+	accelAvg = (double)genAccelIncSum/accel_count;
+	LOGI("Accel average %e", accelAvg);
+
+	gyroAvg = (double)genGyroIncSum/gyro_count;
+	LOGI("Gyro average %e", gyroAvg);
+
+	orientAvg = (double)genOrientIncSum/orient_count;
+	LOGI("Orient average %e", orientAvg);
+
 #endif
+}
