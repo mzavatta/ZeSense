@@ -60,12 +60,12 @@ enum {
 
 // Accelerometer settings ASENSOR_TYPE_ACCELEROMETER
 #define ACCEL_ON 1
-#define ACCEL_HZ 20 //Hz
+#define ACCEL_HZ 100 //Hz
 #define NUM_ACCEL_SAMPLES (ACCEL_HZ*ZS_EXPERIMENT_DURATION)
 
 // Gyro settings ASENSOR_TYPE_GYROSCOPE
 #define GYRO_ON 1
-#define GYRO_HZ 20 //Hz
+#define GYRO_HZ 100 //Hz
 #define NUM_GYRO_SAMPLES (GYRO_HZ*ZS_EXPERIMENT_DURATION)
 
 // Light settings ASENSOR_TYPE_LIGHT
@@ -80,12 +80,12 @@ enum {
 
 // Proximity sensor ASENSOR_TYPE_PROXIMITY
 //#define PROX_ON 1
-#define PROX_HZ 20 //Hz		//TODO: value broadcasted only when it changes!!
+#define PROX_HZ 20 //Hz		//XXX: value broadcasted only when it changes!!
 #define NUM_PROX_SAMPLES (PROX_HZ*ZS_EXPERIMENT_DURATION)
 
 // Orientation sensor ZESENSE_SENSOR_TYPE_ORIENTATION
 #define ORIENT_ON 1
-#define ORIENT_HZ 20 //Hz
+#define ORIENT_HZ 100 //Hz
 #define NUM_ORIENT_SAMPLES (ORIENT_HZ*ZS_EXPERIMENT_DURATION)
 
 // Pressure sensor ZESENSE_SENSOR_TYPE_PRESSURE
@@ -96,7 +96,7 @@ enum {
 #ifndef ZS_EXPERIMENT_MULTIPLE
 #define NUM_SAMPLES NUM_ACCEL_SAMPLES
 #else
-#define NUM_SAMPLES 2000
+#define NUM_SAMPLES 3000
 #endif
 
 struct zs_ASensorEvent {
@@ -687,15 +687,13 @@ void zs_statistics() {
 	int64_t genOrientPeriod, genOrientIncSum = 0;
 	struct zs_ASensorEvent orient_prev_event;
 
+	// Event by event, compound the periods and correct the standard deviation
 	int j=0;
 	for (j=0; j<event_counter; j++) {
 
 		if (events_list[j].event.type == ASENSOR_TYPE_ACCELEROMETER) {
-			//LOGI("accel sample found");
-			//LOGI("TIMESTAMP %llu", events_list[j].event.timestamp);
 			if (accel_count != 0) {
 				genAccelPeriod = events_list[j].event.timestamp - accel_prev_event.event.timestamp;
-				LOGI("gen accel period %llu", genAccelPeriod);
 				genAccelIncSum = genAccelIncSum + genAccelPeriod;
 			}
 			accel_prev_event.event = events_list[j].event;
@@ -703,10 +701,8 @@ void zs_statistics() {
 		}
 
 		if (events_list[j].event.type == ASENSOR_TYPE_GYROSCOPE) {
-			//LOGI("gyro sample found");
 			if (gyro_count != 0) {
 				genGyroPeriod = events_list[j].event.timestamp - gyro_prev_event.event.timestamp;
-				LOGI("gen gyro period %llu", genGyroPeriod);
 				genGyroIncSum = genGyroIncSum + genGyroPeriod;
 			}
 			gyro_prev_event.event = events_list[j].event;
@@ -714,10 +710,8 @@ void zs_statistics() {
 		}
 
 		if (events_list[j].event.type == ZESENSE_SENSOR_TYPE_ORIENTATION) {
-			//LOGI("orient sample found");
 			if (orient_count != 0) {
 				genOrientPeriod = events_list[j].event.timestamp - orient_prev_event.event.timestamp;
-				LOGI("gen orient period %llu", genOrientPeriod);
 				genOrientIncSum = genOrientIncSum + genOrientPeriod;
 			}
 			orient_prev_event.event = events_list[j].event;
