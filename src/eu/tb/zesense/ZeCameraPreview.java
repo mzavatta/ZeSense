@@ -5,12 +5,8 @@ import java.util.List;
 
 import android.content.Context;
 import android.hardware.Camera;
-import android.graphics.Canvas;
-import android.graphics.Rect;
 import android.hardware.Camera.CameraInfo;
 import android.media.MediaRecorder;
-import android.util.Log;
-import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 

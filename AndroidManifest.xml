@@ -4,8 +4,10 @@
     android:versionName="1.0" >
 
     <uses-sdk
-        android:minSdkVersion="9"
+        android:minSdkVersion="14"
         android:targetSdkVersion="15" />
+    <!-- min API14 due to android.net.wifi.p2p also called Wifi Direct -->
+    <!-- Samsung GalaxyS3 Android 4.0.4 API15 ICS -->
     
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.INTERNET"/>
@@ -13,14 +15,20 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.RECORD_VIDEO" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+	<uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+	<uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+	<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     
  	<uses-feature android:name="android.hardware.camera" />
  	<uses-feature android:name="android.hardware.camera.autofocus" />
+ 	<uses-feature android:name="android.hardware.wifi.direct" />
 
     <application
         android:icon="@drawable/ic_launcher"
         android:label="@string/app_name"
         android:theme="@style/AppTheme" >
+        
         <activity
             android:name=".ZeSense"
             android:label="@string/title_activity_ze_sense" >
@@ -30,7 +38,9 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-         <service android:name=".ZeSenseSensorService" />
+        
+        <service android:name=".ZeSensorService" />
+        <service android:name=".ZeCoAPService" />
+        
     </application>
-
 </manifest>

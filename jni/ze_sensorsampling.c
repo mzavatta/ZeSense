@@ -53,19 +53,19 @@ enum {
 #define ZESENSE_SENSOR_TYPE_PRESSURE		6
 
 // Global experiment settings
-#define ZS_EXPERIMENT_DURATION 7 //Seconds
-#define ZS_EXPERIMENT_MULTIPLE 1
+#define ZS_EXPERIMENT_DURATION 360 //Seconds
+//#define ZS_EXPERIMENT_MULTIPLE 1
 #define ZS_EXPERIMENT_PRIORITY (0) //Nice values. More negative means more processor time.
 #define LOGPATH "/sdcard/zesenselog.txt"
 
 // Accelerometer settings ASENSOR_TYPE_ACCELEROMETER
-#define ACCEL_ON 1
+//#define ACCEL_ON 1
 #define ACCEL_HZ 100 //Hz
 #define NUM_ACCEL_SAMPLES (ACCEL_HZ*ZS_EXPERIMENT_DURATION)
 
 // Gyro settings ASENSOR_TYPE_GYROSCOPE
 #define GYRO_ON 1
-#define GYRO_HZ 100 //Hz
+#define GYRO_HZ 20 //Hz
 #define NUM_GYRO_SAMPLES (GYRO_HZ*ZS_EXPERIMENT_DURATION)
 
 // Light settings ASENSOR_TYPE_LIGHT
@@ -84,7 +84,7 @@ enum {
 #define NUM_PROX_SAMPLES (PROX_HZ*ZS_EXPERIMENT_DURATION)
 
 // Orientation sensor ZESENSE_SENSOR_TYPE_ORIENTATION
-#define ORIENT_ON 1
+//#define ORIENT_ON 1
 #define ORIENT_HZ 100 //Hz
 #define NUM_ORIENT_SAMPLES (ORIENT_HZ*ZS_EXPERIMENT_DURATION)
 
@@ -94,7 +94,7 @@ enum {
 #define NUM_PRES_SAMPLES (PRES_HZ*ZS_EXPERIMENT_DURATION)
 
 #ifndef ZS_EXPERIMENT_MULTIPLE
-#define NUM_SAMPLES NUM_ACCEL_SAMPLES
+#define NUM_SAMPLES NUM_GYRO_SAMPLES
 #else
 #define NUM_SAMPLES 3000
 #endif
@@ -127,8 +127,9 @@ struct zs_ASensorEvent {
 void zs_statistics();
 void experiment_multi_timeout(int signum);
 
-void Java_eu_tb_zesense_ZeSenseSensorService_zeSense_1SamplingNative(JNIEnv* env, jobject thiz) {
+void Java_eu_tb_zesense_ZeJNIHub_ze_1samplingnative(JNIEnv* env, jobject thiz) {
 
+	// Hello and current time and date
 	LOGI("Hello from zs_SamplingNative");
 	time_t lt;
 	lt = time(NULL);
@@ -318,20 +319,24 @@ void Java_eu_tb_zesense_ZeSenseSensorService_zeSense_1SamplingNative(JNIEnv* env
 
     while (event_counter < NUM_SAMPLES) {
     	if (ASensorEventQueue_getEvents(sensorEventQueue, &event, 1) > 0) {
-			if (event.type == ASENSOR_TYPE_ACCELEROMETER) { //TODO: redundant check
+			if (event.type == ASENSOR_TYPE_GYROSCOPE) { //TODO: redundant check
 				// place event into the list
             	experiment.events_list[event_counter].event = event;
             	// get and assign the collection timestamp
             	clock_gettime(CLOCK_MONOTONIC, &experiment.events_list[event_counter].collectionTimestamp);
             	uint64_t h = (experiment.events_list[event_counter].collectionTimestamp.tv_sec*1000000000LL)
             			+experiment.events_list[event_counter].collectionTimestamp.tv_nsec;
-				LOGI("accel: x=%f y=%f z=%f",
+            	//LOGI("event light: l=%f", event.light);
+            	/*LOGI("accel: x=%f y=%f z=%f",
 						event.acceleration.x, event.acceleration.y,
-						event.acceleration.z);
+						event.acceleration.z);*/
             	//LOGI("sensor%d, type%d", event.sensor, event.type);
             	/*LOGI("orient: azi=%f pitch=%f roll=%f",
             			event.vector.azimuth, event.vector.pitch,
             			event.vector.roll);*/
+            	LOGI("event gyro: x=%f y=%f z=%f",
+            							event.vector.x, event.vector.y,
+            							event.vector.z);
 			}
         	event_counter++;
     	}
@@ -576,10 +581,14 @@ double dispersion_welford(int64_t* array, int length) {
  * if I define Hz as 200, the actual experiment duration will be roughly double
  *
  */
+
+//TODO: moving average!
+
 void zs_statistics() {
 #ifndef ZS_EXPERIMENT_MULTIPLE
 	int j = 0; //iterator for the arrays
 	char logstr[100];
+
 
 	/*
 	 * EVENT GENERATION FREQUENCY (input subsystem timestamps)
@@ -597,6 +606,9 @@ void zs_statistics() {
 
 	for (j=0; j<NUM_SAMPLES; j++) {
 		genAccelSeries[j]=experiment.events_list[j].event.timestamp;
+
+		sprintf(logstr, "%llu\n", genAccelSeries[j]);
+		if (fputs(logstr, logfd)<0) LOGW("write file failed");
 	}
 	periods(genAccelSeries, NUM_SAMPLES, genAccelPeriods);
 	for (j=0; j<NUM_SAMPLES-1; j++) {
