@@ -77,6 +77,12 @@ void accel_GET_handler (coap_context_t  *context, struct coap_resource_t *resour
 	      coap_address_t *peer, coap_pdu_t *request, str *token,
 	      coap_pdu_t *response) {
 
+	/*
+	 * remember to null the coap_resource_t copy of the pointer inside the state table
+	 * in the streaming manager, otherwise it will continue to use it
+	 * even if the resource is gone
+	 */
+
 	coap_opt_iterator_t opt_iter;
 	int sub_success = -1;
 	coap_opt_t *obs_opt;
@@ -120,24 +126,29 @@ void accel_GET_handler (coap_context_t  *context, struct coap_resource_t *resour
 	return;
 }
 
-void accel_GET_handler (coap_context_t  *context, struct coap_resource_t *resource,
-	      coap_address_t *peer, coap_pdu_t *request, str *token,
-	      coap_pdu_t *response) {
-
-	/*
-	 * remember to null the coap_resource_t copy of the pointer inside the state table
-	 * in the streaming manager, otherwise it will continue to use it
-	 * even if the resource is gone
-	 */
-
-}
-
 void accel_GET_oneshot_handler(coap_context_t  *context, struct coap_resource_t *resource,
 	      coap_address_t *peer, coap_pdu_t *request, str *token,
 	      coap_pdu_t *response) {
 
-	// Ask the sensor framework to send only one sample
-	send_single_sample(context, resource, ACCEL, peer, request, token);
+	// Ask the sensor framework give us the payload of one sample
+	int payload_length;
+	unsigned char *payload;
+	payload_length = get_single_sample(SENSOR_TYPE_ACCELEROMETER, payload);
+
+	// The library is going to automatically send a response, with a piggybacked ACK maybe
+
+	//Add options
+	coap_add_option(response, COAP_OPTION_TOKEN, token->length, token->s);
+	//if (max_age!=NULL) coap_add_option(response, COAP_OPTION_MAXAGE, max_age_length, max_age);
+	//if (reg->content_format!=NULL) coap_add_option(response, COAP_OPTION_CONTENT_FORMAT, 2, reg->content_format);
+
+	//Add data
+	coap_add_data(response, payload_length, payload);
+
+	//Fire
+	if (coap_send(context, peer, response) == COAP_INVALID_TID) {
+			debug("cannot send one-shot response %d\n");
+	}
 }
 
 void accel_on_register (coap_context_t  *context, struct coap_resource_t *resource,
@@ -148,12 +159,9 @@ void accel_on_register (coap_context_t  *context, struct coap_resource_t *resour
 
 	int frequency = 20;
 	int deadline = 0;
-	//get
 
-
-	success1 = add_stream(context, SENSOR_TYPE_ACCELEROMETER,
-			frequency, deadline, token, peer);
-	if (success1) {
+	success1 = add_stream(SENSOR_TYPE_ACCELEROMETER, peer, frequency, deadline);
+	if (success1 == 0) {
 		success2 = coap_add_observer(resource, peer, token);
 		if (success2 == NULL) LOGE("cannot add registration in the list");
 	}
@@ -161,25 +169,18 @@ void accel_on_register (coap_context_t  *context, struct coap_resource_t *resour
 		// As from draft-coap-observe par4.1 suggestion "unable or unwilling"
 		accel_GET_oneshot_handler(context, resource, peer, request, token, response);
 	}
-	/*
-	 * call add_stream(...). If successful:
-	 * - add registration in the list
-	 * - NO!!! send response 2.xx with observe option, the first notification will do that!
-	 * if not successful
-	 * 	send a one-shot representation
-	 */
+
 
 }
 
 void accel_on_unregister (coap_context_t  *context, struct coap_resource_t *resource,
 	      coap_address_t *peer, coap_pdu_t *request, str *token,
 	      coap_pdu_t *response) {
-	/*
-	 * unconditionally:
-	 * call stop_stream(...)
-	 * erase the registration from the list
-	 */
-	stop_stream(context, SENSOR_TYPE_ACCELEROMETER, token, peer);
+
+	// Halt the stream in stream manager
+	stop_stream(SENSOR_TYPE_ACCELEROMETER, peer);
+
+	// Delete the observer from the resource register
 	coap_delete_observer(resource, peer, token);
 }
 

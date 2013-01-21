@@ -20,14 +20,9 @@ int Java_eu_tb_zesense_ZeJNIHub_ze_1coap_1server_1example_1main() {
 
 	LOGI("ZeSense new CoAP server hello!");
 
-	// Server context
+	// Server context, never to reallocate or move or delete,
+	// its pointer is passed to many threads
 	coap_context_t  *context;
-
-
-
-	// Start children threads
-
-
 
 	fd_set readfds;
 	struct timeval tv, *timeout;
@@ -50,6 +45,11 @@ int Java_eu_tb_zesense_ZeJNIHub_ze_1coap_1server_1example_1main() {
 	ze_coap_init_resources(context);
 
 	//signal(SIGINT, handle_sigint);
+
+
+	// Start children threads
+
+
 
 	while ( !quit ) {
 		FD_ZERO(&readfds);

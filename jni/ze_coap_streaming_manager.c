@@ -6,7 +6,7 @@ const ASensor* accelerometerSensor;
 #define RTP_FREQ 200
 
 
-void add_stream(coap_resource_t *resource, coap_address_t *dest, int sensor, str query) {
+int add_stream(int sensor, coap_address_t *dest, int freq, int deadline) {
 
 	ze_sensor_t *sensor_str;
 	ze_single_stream_t *streams, *sub, ns;
@@ -51,16 +51,52 @@ void add_stream(coap_resource_t *resource, coap_address_t *dest, int sensor, str
 		android_sensor_changef(sensor, sensor_str->freq);
 
 		//Append or "replace" previous stream if same destination
-		LL_SEARCH(streams, sub, destination, stream_equals_dest);
+		LL_SEARCH(streams, sub, dest, stream_equals_dest);
 		if (sub) { //Stream with same destination present, delete the previous
 			LL_DELETE(streams, sub);
 		}
 		LL_APPEND(streams, ns);
 	}
+
+	return 0;
 }
 
-int find_stream() {
-	ze_streaming_state
+
+void stop_stream(int sensor, 	coap_address_t *dest) {
+
+	ze_sensor_t *sensor_str;
+	ze_single_stream_t *streams, *del;
+
+	sensor_str = &ze_streaming_state[sensor];
+	streams = ze_streaming_state[sensor].streams;
+
+	//If the sensor has some streams
+	if (streams != NULL) {
+
+		// Find the one with the given destination
+		LL_SEARCH(streams, sub, dest, stream_equals_dest);
+		if (sub) { //Stream with same destination present, delete it
+			LL_DELETE(streams, sub);
+		}
+
+		// If it was the last one
+		if (streams == NULL) {
+			android_sensor_turnoff(sensor);
+		}
+		else { // There are others streams for that sensor, need to reconsider the frequency
+			find max
+			sensor_str->freq = newmaxf;
+			android_sensor_changef(ASENSOR_TYPE_ACCELEROMETER, newmaxf);
+		}
+	}
+	else {
+		LOGW("something went wrong, asked to stop stream but no streams are active");
+	}
+}
+
+int stream_equals_dest(ze_single_stream_t *elem, coap_address_t *dest) {
+	if (coap_address_equals(element->dest, dest)  == 1) return 0;
+	else return -1;
 }
 
 
@@ -97,14 +133,29 @@ int android_sensor_activate(int sensor, int freq) {
 
 }
 
+int android_sensor_turnoff(int sensor) {
 
-int stream_equals_dest(ze_single_stream_t *elem, coap_address_t *dest) {
-	if (coap_address_equals(element->dest, dest)  == 1) return 0;
-	else return -1;
+	if (sensor == ASENSOR_TYPE_ACCELEROMETER) {
+		// Grab the sensor description
+		accelerometerSensor = ASensorManager_getDefaultSensor(sensorManager, ASENSOR_TYPE_ACCELEROMETER);
+
+		// Start monitoring the sensor
+		if (accelerometerSensor != NULL) {
+			LOGI("got accelerometer sensor");
+			ASensorEventQueue_enableSensor(sensorEventQueue, accelerometerSensor);
+			ASensorEventQueue_setEventRate(sensorEventQueue, accelerometerSensor, freq);
+		}
+		else {
+			LOGW("accelerometer sensor NULL");
+			exit(1);
+		}
+	}
+
 }
 
 
-void ze_coap_streaming_thread() {
+
+void ze_coap_streaming_thread(coap_context_t *context) {
 
 	// Hello and current time and date
 	LOGI("Hello from zs_SamplingNative");
@@ -139,8 +190,13 @@ void ze_coap_streaming_thread() {
 	if (fputs(ctime(&lt), logfd)<0) LOGW("write failed");
 
 	ASensorEvent event;
-	ze_sensor_coap_payload pay;
-	coap_pdu_t *pdu;
+	ze_sensor_coap_payload *payload;
+	int payload_length;
+	coap_address_t dst;
+	str uri;
+	int rto, rtc, max_age;
+
+	payload = malloc()
 
 	while(1) {
 		//is this blocking?
@@ -151,51 +207,43 @@ void ze_coap_streaming_thread() {
 						event.acceleration.x, event.acceleration.y,
 						event.acceleration.z);
 
+            	//Check if we have streams for that sensor
 				if (ze_streaming_state[ASENSOR_TYPE_ACCELEROMETER].stream != NULL) {
-					//Build a PDU
-					// TODO: reconsider whether this job should be done by notify
-					typedef struct {
-					  size_t max_size;			/**< allocated storage for options and data */
-					  coap_hdr_t *hdr;
-					  unsigned short length;	/* PDU length (including header, options, data)  */
-					  coap_list_t *options;		/* parsed options */
-					  unsigned char *data;		/* payload */
-					} coap_pdu_t;
+					//Fot the moment only one observer possible for each sensor
 
-					pdu = coap_pdu_init()
-
-					coap_add_data(pdu, unsigned int len, const unsigned char *data);
-
-					//Timestamp according to RTP
-					pay.wts = event.timestamp;
-					pay.rtpts = ze_streaming_state[ASENSOR_TYPE_ACCELEROMETER].stream.last_rtpts
+					//Prepare payload
+					payload->wts = event.timestamp;
+					payload->rtpts = ze_streaming_state[ASENSOR_TYPE_ACCELEROMETER].stream.last_rtpts
 							+ (ze_streaming_state[ASENSOR_TYPE_ACCELEROMETER].stream.freq/RTP_FREQ);
+					payload->debugpayload = 123;
+					payload_length = sizeof(ze_sensor_coap_payload);
 
 					//Fire
-					int rto = ze_streaming_state[ASENSOR_TYPE_ACCELEROMETER].stream.deadline;
-					coap_address_t dst = ze_streaming_state[ASENSOR_TYPE_ACCELEROMETER].stream.dest;
+					uri = ze_streaming_state[ASENSOR_TYPE_ACCELEROMETER].uri;
+					dst = ze_streaming_state[ASENSOR_TYPE_ACCELEROMETER].uri.stream.dest;
+					rto = ze_streaming_state[ASENSOR_TYPE_ACCELEROMETER].stream.deadline;
 
-					/**	 coap_notify(coap_resource_t *resource, unsigned int len, const unsigned char *data,
-					 * 	coap_address_t *dst, int conf, int rto, int rtc, int max_age); */
-
-					/* takes care of automatic things that go along with observe */
-
-					// if the resource associated with the sensor hasn't been DELETED
-					if (ze_streaming_state[ASENSOR_TYPE_ACCELEROMETER] != NULL) {
-						//coap_notify(pdu, dst, COAP_MESSAGE_NON, rto, NULL, NULL);
-					}
-					else {
-						// clean the streams associated with this sensor!
-					}
+					//Attention that this goes directly to the socket for the moment..
+					coap_notify(context, uri, dst, &payload, payload_length, COAP_MESSAGE_NON, rto, NULL, NULL, NULL);
 				}
 				else {
 					LOGW("got accelerometer sample but no streams present for it");
 				}
-
 			}
-
     	}
 	}
+}
+
+int get_single_sample(int sensor, unsigned char *data) {
+
+	data = (ze_sensor_coap_payload*) malloc(sizeof(ze_sensor_coap_payload));
+
+	event = ze_streaming_state[sensor].event;
+	data->wts = event.timestamp;
+	data->rtpts = 100;
+	data->debugpayload = 123;
+
+	return sizeof(ze_sensor_coap_payload);
 }
 
 
