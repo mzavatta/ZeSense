@@ -48,8 +48,7 @@ static coap_async_state_t *async = NULL;
 #endif /* WITHOUT_ASYNC */
 
 /* SIGINT handler: set quit to 1 for graceful termination */
-void
-handle_sigint(int signum) {
+void handle_sigint(int signum) {
   quit = 1;
 }
 
@@ -68,8 +67,7 @@ handle_sigint(int signum) {
 #define LOGE(...) ((void)__android_log_print(ANDROID_LOG_ERROR, "ze_coapserver", __VA_ARGS__))
 
 
-void 
-hnd_get_index(coap_context_t  *ctx, struct coap_resource_t *resource, 
+void hnd_get_index(coap_context_t  *ctx, struct coap_resource_t *resource,
 	      coap_address_t *peer, coap_pdu_t *request, str *token,
 	      coap_pdu_t *response) {
   unsigned char buf[3];
@@ -88,8 +86,7 @@ hnd_get_index(coap_context_t  *ctx, struct coap_resource_t *resource,
   coap_add_data(response, strlen(INDEX), (unsigned char *)INDEX);
 }
 
-void 
-hnd_get_time(coap_context_t  *ctx, struct coap_resource_t *resource, 
+void hnd_get_time(coap_context_t  *ctx, struct coap_resource_t *resource,
 	     coap_address_t *peer, coap_pdu_t *request, str *token,
 	     coap_pdu_t *response) {
   coap_opt_iterator_t opt_iter;
@@ -151,8 +148,7 @@ hnd_get_time(coap_context_t  *ctx, struct coap_resource_t *resource,
   }
 }
 
-void 
-hnd_put_time(coap_context_t  *ctx, struct coap_resource_t *resource, 
+void hnd_put_time(coap_context_t  *ctx, struct coap_resource_t *resource,
 	     coap_address_t *peer, coap_pdu_t *request, str *token,
 	     coap_pdu_t *response) {
   coap_tick_t t;
@@ -186,8 +182,7 @@ hnd_put_time(coap_context_t  *ctx, struct coap_resource_t *resource,
     coap_add_option(response, COAP_OPTION_TOKEN, token->length, token->s);
 }
 
-void 
-hnd_delete_time(coap_context_t  *ctx, struct coap_resource_t *resource, 
+void hnd_delete_time(coap_context_t  *ctx, struct coap_resource_t *resource,
 	      coap_address_t *peer, coap_pdu_t *request, str *token,
 	      coap_pdu_t *response) {
   my_clock_base = 0;		/* mark clock as "deleted" */
@@ -200,8 +195,7 @@ hnd_delete_time(coap_context_t  *ctx, struct coap_resource_t *resource,
 }
 
 #ifndef WITHOUT_ASYNC
-void 
-hnd_get_async(coap_context_t  *ctx, struct coap_resource_t *resource, 
+void hnd_get_async(coap_context_t  *ctx, struct coap_resource_t *resource,
 	      coap_address_t *peer, coap_pdu_t *request, str *token,
 	      coap_pdu_t *response) {
   coap_opt_iterator_t opt_iter;
@@ -230,8 +224,7 @@ hnd_get_async(coap_context_t  *ctx, struct coap_resource_t *resource,
 			      (void *)(COAP_TICKS_PER_SECOND * delay));
 }
 
-void 
-check_async(coap_context_t  *ctx, coap_tick_t now) {
+void check_async(coap_context_t  *ctx, coap_tick_t now) {
   coap_pdu_t *response;
   coap_async_state_t *tmp;
 
@@ -272,14 +265,12 @@ check_async(coap_context_t  *ctx, coap_tick_t now) {
 #endif /* WITHOUT_ASYNC */
 
 #ifndef WITHOUT_OBSERVE
-void
-check_observe(coap_context_t  *ctx) {
+void check_observe(coap_context_t  *ctx) {
   coap_check_notify(ctx);
 }
 #endif /* WITHOUT_OBSERVE */
 
-void
-init_resources(coap_context_t *ctx) {
+void init_resources(coap_context_t *ctx) {
   coap_resource_t *r;
 
   r = coap_resource_init(NULL, 0, 0);
@@ -314,8 +305,7 @@ init_resources(coap_context_t *ctx) {
 #endif /* WITHOUT_ASYNC */
 }
 
-void
-usage( const char *program, const char *version) {
+void usage( const char *program, const char *version) {
   const char *p;
 
   p = strrchr( program, '/' );
@@ -331,8 +321,7 @@ usage( const char *program, const char *version) {
 	   program, version, program );
 }
 
-coap_context_t *
-get_context(const char *node, const char *port) {
+coap_context_t* get_context(const char *node, const char *port) {
   coap_context_t *ctx = NULL;  
   int s;
   struct addrinfo hints;
@@ -373,8 +362,7 @@ get_context(const char *node, const char *port) {
   return ctx;
 }
 
-int
-Java_eu_tb_zesense_ZeJNIHub_ze_1coap_1server_1main() {
+int Java_eu_tb_zesense_ZeJNIHub_ze_1coap_1server_1example_1main() {
 
 	LOGI("ZeSense CoAP server hello!");
 

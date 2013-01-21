@@ -23,7 +23,7 @@ import android.widget.Toast;
 
 public class ZeWifiAP {
 	
-	// To be kept in sych with @hided definitions in WifiManager.java
+	// To be kept in synch with @hidden definitions in WifiManager.java
     public static final String WIFI_AP_STATE_CHANGED_ACTION =
         "android.net.wifi.WIFI_AP_STATE_CHANGED";
     public static final String EXTRA_WIFI_AP_STATE = "wifi_state";
@@ -41,12 +41,10 @@ public class ZeWifiAP {
 	
 	// Wifi infrastructure
 	WifiManager wifiManager;
+	WifiConfiguration netConfig;
 	
 	// Reflected methods
-	Method setWifiApEnabled, isWifiApEnabled, getWifiApState;
-	
-	// Wifi network configuration
-	WifiConfiguration netConfig;
+	Method setWifiApEnabled, isWifiApEnabled, getWifiApState, getConfigFile;
 	
 	public ZeWifiAP (ZeSense callingActivity) {
 		this.callingActivity = callingActivity;
@@ -66,7 +64,8 @@ public class ZeWifiAP {
 		
 		// Reflection
 		Method[] wmMethods = wifiManager.getClass().getDeclaredMethods();   
-        boolean methodSetEnabledFound = false, methodIsEnabledFound = false, methodGetStateFound = false;
+        boolean methodSetEnabledFound = false, methodIsEnabledFound = false,
+        		methodGetStateFound = false, methodGetConfigFound = false;
         for(Method method: wmMethods) {
 	        if(method.getName().equals("setWifiApEnabled")) {
 	        	methodSetEnabledFound = true;
@@ -80,8 +79,13 @@ public class ZeWifiAP {
 	        	methodGetStateFound = true;
 	        	getWifiApState = method;
             }
+	        if(method.getName().equals("getConfigFile")) {
+	        	methodGetConfigFound = true;
+	        	getConfigFile = method;
+            }
         }
-        if((!methodSetEnabledFound) || (!methodIsEnabledFound)) {
+        if((!methodSetEnabledFound) || (!methodIsEnabledFound)
+        		|| (!methodGetStateFound) || (!methodGetConfigFound)) {
             Log.w(TAG, "ZeWifiAP cannot find methods for reflection");
             return false;
         }
@@ -121,14 +125,18 @@ public class ZeWifiAP {
     		int state = (Integer) getWifiApState.invoke(wifiManager);
     		
     		// If enabling, wait..
-    		// TODO: cannot loop forever!
+    		// TODO: need to put a limit somehow..!
     		while (state == WIFI_AP_STATE_ENABLING) {
-    		
+    			state = (Integer) getWifiApState.invoke(wifiManager);
     		}
     		
     		if(state == WIFI_AP_STATE_ENABLED) {
     			Log.i(TAG, "ZeWifiAP AP created, SSID: "+netConfig.SSID);
+    			
+    			// Which IP address do we have on this interface?
     			getLocalIpAddressString();
+    			Log.i(TAG, (String) getConfigFile.invoke(wifiManager));
+    			
     			return true;
     		}
             else {
@@ -147,8 +155,8 @@ public class ZeWifiAP {
     	return false;
 	}
 	
-	public  void getLocalIpAddressString() {
-		
+	// Loops through interfaces and Toasts their IPs, excluding the loopback one
+	public void getLocalIpAddressString() {
 		try {
 			for (Enumeration<NetworkInterface> en = NetworkInterface.getNetworkInterfaces(); en.hasMoreElements();) {
 				NetworkInterface intf = en.nextElement();
@@ -158,7 +166,6 @@ public class ZeWifiAP {
 	                    // return inetAddress.getHostAddress().toString();
 						Toast.makeText(callingActivity.getApplicationContext(), inetAddress.getHostAddress().toString(),
 								Toast.LENGTH_SHORT).show();
-
 					}
 				}
 	     	 }
