@@ -220,7 +220,7 @@ void ze_coap_streaming_thread(coap_context_t *context) {
 
 					//Fire
 					uri = ze_streaming_state[ASENSOR_TYPE_ACCELEROMETER].uri;
-					dst = ze_streaming_state[ASENSOR_TYPE_ACCELEROMETER].uri.stream.dest;
+					dst = ze_streaming_state[ASENSOR_TYPE_ACCELEROMETER].stream.dest;
 					rto = ze_streaming_state[ASENSOR_TYPE_ACCELEROMETER].stream.deadline;
 
 					//Attention that this goes directly to the socket for the moment..
