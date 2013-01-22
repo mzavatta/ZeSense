@@ -19,33 +19,49 @@ int Java_eu_tb_zesense_ZeJNIHub_ze_1coap_1server_1core() {
 
 	LOGI("ZeSense new CoAP server hello!");
 
-	/* Spawn *all* the threads from here, this thread has no other function!
-	 * Though it does instantiate the CoAP context and the SM context
-	 * And passes both to the receiver and sm threads, only CoAP context to sender
-	 * so maybe we can spawn receiver and sm and spawn sender from within receiver?
+	/* Spawn *all* the threads from here, this thread has no other function
+	 * except for instantiating the CoAP, SM contexts and the two buffers
+	 * and passing their references to the threads.
 	 */
 
-	/* Contexts, never to reallocate, move or delete because
+	/* Contexts and buffers; NEVER to reallocate, move or delete because
 	 * they are shared among threads! unless we use
 	 * reference counting */
 	coap_context_t  *cctx;
-	stream_context_t *smctx;
-
-	// DO I HAVE TO INSTANTIATE THE QUEUES HERE?
-
-	/* Fire threads! */
-	/*
-	 *
-	 *
-	 *
-	 */
-
-
-
-	/* Get an instance of the global context */
 	cctx = get_context(SERVER_IP, SERVER_PORT);
 	if (!context)
 		return -1;
+
+	stream_context_t *smctx;
+	//Init
+
+	ze_request_buf_t smreqbuf;
+	init_req_buf(&smreqbuf);
+
+	//Instance of notifications buf
+	//Init
+
+	/* Fire threads! */
+	/*
+	 * In a three-thread scenario:
+	 * - receiver needs cctx, smctx, smreqbuf, notbuf
+	 * - sm needs smctx, smreqbuf, notbuf
+	 * - sender needs cctx, smreqbuf, notbuf
+	 *
+	 * (receiver needs smctx because of the tiny bastard pick-up of
+	 * a one-shot sample, which for the moment we leave in the receiver
+	 * thread)
+	 * (for the moment we leave one-shot requests to the receiver
+	 * supposing that the request rate is not so overwhelming..
+	 * though this means either sharing the outwards socket or
+	 * create a response buffer for the sender to pick up from)
+	 * (a possible solution is to modify the notbuf & coap_notify() to include
+	 * not only notifications but any kind of response, with a parameter fed to
+	 * coap_notify() do drive the coap_notify() behaviour)
+	 *
+	 * (sender needs smreqbuf because it might
+	 * decide to stop a stream if the acks do not arrive)
+	 */
 
 	fd_set readfds;
 	struct timeval tv, *timeout;

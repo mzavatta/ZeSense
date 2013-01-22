@@ -1,13 +1,40 @@
+void sm_check_request_queue(ze_request_buf_t *queue) {
+
+	//pick an element
+
+	//if request == start stream
+		//sm_start_stream()
+
+	//else if request == stop stream
+		//sm_stop_stream()
+
+	//else if ...
+
+	// WAIT BUT SO FAR
+	// sm_get_single_sample() TOUCHES THE FUCKING REGISTER FUCK FUCK!
+	// THEREFORE IN THIS FUNCION BODY WE DON'T SEE IT, DON'T PUT AN else if
+	// FOR IT
+	// IF WE LET IT GO INTO THE REQUEST QUEUE TOO, IT IS NOT A STREAM..
+	// OUR STREAMING MANAGER MODEL DOES NOT REALLY INCLUDE FOR NON STREAM REGISTRATIONS..
+	// NOTHING THE BEST SOLUTION IS LEAVE IT WITH THE RECEIVER THREAD
+	// WE JUST DO A FUNCTION THAT WELL LOCKS THE SM REGISTER FOR THAT LITTLE TIME
+	// PICKS THE SAMPLE AND GETS OUT OF THE WAY...
+	// THIS MEANS THOUGH THAT THE RECEIVER NEEDS THE POINTER TO THE SM REGISTER TOO
 
 
+}
 
-int add_stream(int sensor, coap_address_t *dest, int freq, int deadline) {
 
-	ze_sensor_t *sensor_str;
-	ze_single_stream_t *streams, *sub, ns;
+int sm_start_stream(stream_context_t *mngr, int sensor_id, coap_address_t dest, int freq) {
 
-	sensor_str = &ze_streaming_state[sensor];
-	streams = ze_streaming_state[sensor].streams;
+	//FIXME: for the moment we support only one stream for
+	//it saves some time on the linked list management
+
+	ze_sensor_t *sensor;
+	ze_stream_t *streams, *sub, newstream;
+
+	sensor = &(mngr->sensor[sensor_id]);
+	streams = sensor->streams;
 
 	/*
 	 * interpret the query and create
@@ -17,20 +44,17 @@ int add_stream(int sensor, coap_address_t *dest, int freq, int deadline) {
 	 */
 
 	//Prepare stream item
-	ns = (ze_single_stream *) malloc(sizeof(ze_single_stream_t));
-	if (ns) {
-		memset(ns, 0, sizeof(ze_single_stream_t));
+	newstream = (ze_stream_t *) malloc(sizeof(ze_stream_t));
+	if (newstream) {
+		memset(newstream, 0, sizeof(ze_stream_t));
 	}
-	ns->freq = frequency;
-	ns->deadline = deadline;
-	ns->dest = *dest;
+	ns->next = NULL;
+	ns->freq = freq;
+	ns->dest = dest;
 	ns->last_rtpts = 100;
 	//TODO: last_wts
 	//TODO: randomize rtpts since it's its first assignment
 	//TODO: frequency divider to be considered based on the current sampling frequency
-
-	//If greater, reconsider the sensor maximum frequency
-	if (frequency > sensor_str->freq) freq=frequency;
 
 	if (streams == NULL) { //First stream of this sensor
 
@@ -38,12 +62,17 @@ int add_stream(int sensor, coap_address_t *dest, int freq, int deadline) {
 		android_sensor_activate(sensor, sensor_str->freq);
 
 		//Insert stream in the list
-		LL_APPEND(streams);
+		//LL_APPEND(streams);
+
+
 	}
 	else {
 
-		//Change sampling frequency
-		android_sensor_changef(sensor, sensor_str->freq);
+		//Reconsider the sensor maximum frequency
+		if (freq > (sensor->freq)) {
+			android_sensor_changef(sensor, sensor_str->freq);
+			sensor->freq = freq;
+		}
 
 		//Append or "replace" previous stream if same destination
 		LL_SEARCH(streams, sub, dest, stream_equals_dest);
@@ -57,7 +86,7 @@ int add_stream(int sensor, coap_address_t *dest, int freq, int deadline) {
 }
 
 
-void stop_stream(int sensor, 	coap_address_t *dest) {
+void sm_stop_stream(int sensor, 	coap_address_t *dest) {
 
 	ze_sensor_t *sensor_str;
 	ze_single_stream_t *streams, *del;
@@ -251,9 +280,12 @@ int get_single_sample(int sensor, unsigned char *data) {
 
 /* Thread
 while 1
-- scorre la lista per vedere se attivare dei sensori e a che frequenza
-NO! questo lo facciamo fare al server core! tanto la rate di richieste non può essere altissima
+- SI scorre la lista per vedere se attivare dei sensori e a che frequenza
+NO, e invece IS! questo lo facciamo fare al server core! tanto la rate di richieste non può essere altissima
 anche se il thread che riceve le richieste è un pò più caricato non fa niente!
+
+- pick some from the request queue
+(using get_req_buf_item), do the actions requested
 
 - ad ogni sample per ogni stream su quel sensore guarda se la f è adatta e se si lo invia usando notify()
 (in notify non need to care whether a minimum number of CON are being sent, if we want in here we notify

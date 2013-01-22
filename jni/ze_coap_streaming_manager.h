@@ -35,29 +35,29 @@
 #define SM_RBUF_SIZE		20
 
 /**
- * Binds a sensor source @p sensor to a specific @p URI.
+ * Binds a sensor source @p sensor_id to a specific @p URI.
  * Only one URI can be associated to a sensor source;
  * If an association is already in place, it will be overwritten.
  *
  * @param mngr		The Streaming Manager context
- * @param sensor	One of the available sensor sources
- * @param uri		String variable to associate to @p sensor
+ * @param sensor_id	One of the available sensor sources
+ * @param uri		String variable to associate to @p sensor_id
  *
  * @return Zero on success and first association,
  * @c SM_URI_REPLACED if successful and association overwritten
  * @c SM_ERROR on failure
  */
-int bind_source(stream_context_t *mngr, int sensor, str uri);
+int sm_bind_source(stream_context_t *mngr, int sensor_id, str uri);
 
 /**
  * Binds the given @p server to Streaming Manager @p mngr
  * in order to relay notifications to him.
  */
-int bind_server(stream_context_t *mngr, coap_context_t *server);
+int sm_bind_server(stream_context_t *mngr, coap_context_t *server);
 
 /**
  * Starts a stream of notifications of samples
- * collected by @p sensor to destination @p dest.
+ * collected by @p sensor_id to destination @p dest.
  * The client will be notified at the given frequency @p freq.
  * Only one specific destination is allowed for a sensor source.
  * If already existing, it will be replaced.
@@ -71,53 +71,53 @@ int bind_server(stream_context_t *mngr, coap_context_t *server);
  * maybe even in the form of some query language
  *
  * @param mngr		The Streaming Manager context
- * @param sensor	The sensor source of data
+ * @param sensor_id	The sensor source of data
  * @param dest		The IP/port coordinates of the destination
  * @param freq		The frequency of notifications
  *
  * @return Zero on success, @c SM_STREAM_REPLACED if the new stream
  * replaced an existing one, @c SM_ERROR on failure
  */
-int start_stream(stream_context_t *mngr, int sensor, coap_address_t *dest, int freq);
+int sm_start_stream(stream_context_t *mngr, int sensor_id, coap_address_t dest, int freq);
 
 /**
- * Stops the stream of notifications from @p sensor
+ * Stops the stream of notifications from @p sensor_id
  * to destination @p dest.
  *
  * @param mngr		The Streaming Manager context
- * @param sensor	The sensor source of data
+ * @param sensor_id	The sensor source of data
  * @param dest		The IP/port coordinates of the destination
  *
  * @return Zero on success, @c SM_ERROR on failure
  * (e.g. the stream does not exist)
  */
-int stop_stream(stream_context_t *mngr, int sensor, coap_address_t *dest);
+int sm_stop_stream(stream_context_t *mngr, int sensor_id, coap_address_t dest);
 
 /**
- * Checks if a stream from @p sensor to destination @p dest
+ * Checks if a stream from @p sensor_id to destination @p dest
  * is currently running.
  *
  * @param mngr		The Streaming Manager context
- * @param sensor	The sensor source of data
+ * @param sensor_id	The sensor source of data
  * @param dest		The IP/port coordinates of the destination
  *
  * @return Zero if positive answer, @c SM_NEGATIVE otherwise
  */
-int is_streaming(stream_context_t *mngr, int sensor, 	coap_address_t *dest);
+int sm_is_streaming(stream_context_t *mngr, int sensor_id, coap_address_t dest);
 
 /**
- * Returns a single sample of @p sensor
+ * Returns a single sample of @p sensor_id
  * Is is put in the container @p data of length @p length
  * The memory allocated for @p data will not be freed.
  *
  * @param mngr		The Streaming Manager context
- * @param sensor	The sensor source of data
+ * @param sensor_id	The sensor source of data
  * @param data		Data bytes
  * @param length	Length of the @p data field
  *
  * @return Zero on success, @c SM_ERROR on failure
  */
-int get_single_sample(stream_context_t *mngr, int sensor,
+int sm_get_single_sample(stream_context_t *mngr, int sensor_id,
 		unsigned char *data, int length);
 
 /**
@@ -262,7 +262,7 @@ typedef struct ze_sensor_t {
 
 	/* List of streams registered on this sensor */
 	//ze_single_stream_t *streams = NULL;
-	ze_single_stream_t stream = NULL;
+	ze_single_stream_t *streams = NULL;
 
 	/* Local status variables */
 	int freq;
