@@ -131,9 +131,125 @@ typedef struct stream_context_t {
 	/* The server we're sending the streams to */
 	coap_context_t server = NULL;
 
+	//Transferred elsewhere... it does not belong here..
+	//it belongs where the instance of stream_context_t is!
 	/* Request buffer available for a multithread implementation */
-	ze_request_t rbuf[SM_RBUF_SIZE];
+	//ze_request_t rbuf[SM_RBUF_SIZE];
 };
+
+/**
+ * Fixed length FIFO buffer (non-circular)
+ */
+typedef struct ze_request_buf_t {
+
+	ze_request_t rbuf[SM_RBUF_SIZE];
+
+	/* Indexes, wrap around according to %SM_RBUF_SIZE*/
+	int gethere, puthere;
+
+	/* Item counter, does not wrap around */
+	int counter;
+
+	/* Thread synch (no need of the empty condition) */
+	pthread_mutex_t mtx;
+	pthread_cond_t notfull;
+	//pthread_cond_t notempty;
+};
+
+/**
+ * To fit our purposes:
+ * - It MUST NOT block on the empty condition. The putter might not
+ * feed any more data into it, but we must go on!
+ * - It COULD block on the mutex. We're confident that the getter
+ * will not starve us.
+ *
+ * Gets the oldest item in the buffer @p buf. It blocks if the buffer is
+ * being used by another thread, it does not block if empty.
+ *
+ * @param The buffer instance
+ *
+ * @return The oldest item in the buffer, NULL if buffer empty
+ */
+ze_request_t get_req_buf_item(ze_request_buf_t *buf) {
+
+	pthread_mutex_lock(buf->mtx);
+		if (buf->counter <= 0) { //empty (shall never < 0 anyway)
+			/*
+			 * pthread_cond_wait(buf->notempty, buf->mtx);
+			 * do nothing, we must not block!
+			 */
+			return NULL;
+		}
+		else {
+			ze_request_t temp = buf->rbuf[buf->gethere];
+			buf->gethere = ((buf->gethere)+1) % SM_RBUF_SIZE;
+			counter--;
+			pthread_cond_signal(buf->notfull); //surely no longer full
+		}
+	pthread_mutex_unlock(buf->mtx);
+
+	return temp;
+}
+
+/*
+ * To fit our purposes:
+ * - It SHOULD block on the full condition. Were do we put the message from
+ * the network once we've fetched it from the socket?  We're confident that
+ * the getter will not starve us.
+ * - It SHOULD block on the mutex. We're confident that the getter will not
+ * starve us.
+ *
+ * Puts an item in the buffer @p buf. It blocks if the buffer is
+ * being used by another thread, and it also blocks indefinitely is
+ * the buffer is full.
+ *
+ * @param The buffer instance
+ * @param The item to be inserted, passed by value
+ *
+ * @return Zero on success
+ */
+int put_req_buf_item(ze_request_buf_t *buf, ze_request_t item) {
+
+	pthread_mutex_lock(buf->mtx);
+		if (buf->counter >= SM_RBUF_SIZE) { //full (greater shall not happen)
+			pthread_cond_wait(buf->notfull, buf->mtx);
+		}
+		buf->rbuf[buf->puthere] = item;
+		buf->puthere = ((buf->puthere)+1) % SM_RBUF_SIZE;
+		counter++;
+		//pthread_cond_signal(buf->notempty); //surely no longer empty
+	pthread_mutex_unlock(buf->mtx);
+
+	return 0;
+}
+
+void init_req_buf(ze_request_buf_t *buf) {
+
+	/* What happens if a thread tries to initialize a mutex or a cond var
+	 * that has already been initialized? "POSIX explicitly
+	 * states that the behavior is not defined, so avoid
+	 * this situation in your programs"
+	 */
+	int error = pthread_mutex_init(buf->mtx, NULL);
+	if (error)
+		fprintf(stderr, "Failed to initialize mtx:%s\n", strerror(error));
+
+	error = pthread_cond_init(buf->notfull, NULL);
+	if (error)
+		fprintf(stderr, "Failed to initialize full cond var:%s\n", strerror(error));
+
+	/*
+	 * error = pthread_cond_init(buf->notempty, NULL);
+	 * if (error)
+	 *	 fprintf(stderr, "Failed to initialize empty cond var:%s\n", strerror(error));
+	 */
+
+	/* Reset pointers */
+	buf->gethere = 0;
+	buf->puthere = 0;
+	buf->counter = 0;
+}
+
 
 
 typedef struct ze_sensor_t {

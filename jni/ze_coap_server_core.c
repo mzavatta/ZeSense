@@ -26,7 +26,8 @@ int Java_eu_tb_zesense_ZeJNIHub_ze_1coap_1server_1core() {
 	 */
 
 	/* Contexts, never to reallocate, move or delete because
-	 * they are shared among threads! */
+	 * they are shared among threads! unless we use
+	 * reference counting */
 	coap_context_t  *cctx;
 	stream_context_t *smctx;
 
