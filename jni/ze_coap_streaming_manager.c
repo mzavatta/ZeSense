@@ -1,9 +1,4 @@
-ASensorManager* sensorManager;
-ASensorEventQueue* sensorEventQueue;
-ALooper* looper;
-const ASensor* accelerometerSensor;
 
-#define RTP_FREQ 200
 
 
 int add_stream(int sensor, coap_address_t *dest, int freq, int deadline) {
@@ -156,6 +151,13 @@ int android_sensor_turnoff(int sensor) {
 
 
 void ze_coap_streaming_thread(coap_context_t *context) {
+
+	/*
+	ASensorManager* sensorManager;
+	ASensorEventQueue* sensorEventQueue;
+	ALooper* looper;
+	const ASensor* accelerometerSensor;
+	 */
 
 	// Hello and current time and date
 	LOGI("Hello from zs_SamplingNative");

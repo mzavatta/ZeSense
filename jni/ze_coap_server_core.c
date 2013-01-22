@@ -15,14 +15,36 @@
 #include 'ze_coap_resources.h'
 
 
-
-int Java_eu_tb_zesense_ZeJNIHub_ze_1coap_1server_1example_1main() {
+int Java_eu_tb_zesense_ZeJNIHub_ze_1coap_1server_1core() {
 
 	LOGI("ZeSense new CoAP server hello!");
 
-	// Server context, never to reallocate or move or delete,
-	// its pointer is passed to many threads
-	coap_context_t  *context;
+	/* Spawn *all* the threads from here, this thread has no other function!
+	 * Though it does instantiate the CoAP context and the SM context
+	 * And passes both to the receiver and sm threads, only CoAP context to sender
+	 * so maybe we can spawn receiver and sm and spawn sender from within receiver?
+	 */
+
+	/* Contexts, never to reallocate, move or delete because
+	 * they are shared among threads! */
+	coap_context_t  *cctx;
+	stream_context_t *smctx;
+
+	// DO I HAVE TO INSTANTIATE THE QUEUES HERE?
+
+	/* Fire threads! */
+	/*
+	 *
+	 *
+	 *
+	 */
+
+
+
+	/* Get an instance of the global context */
+	cctx = get_context(SERVER_IP, SERVER_PORT);
+	if (!context)
+		return -1;
 
 	fd_set readfds;
 	struct timeval tv, *timeout;
@@ -37,10 +59,7 @@ int Java_eu_tb_zesense_ZeJNIHub_ze_1coap_1server_1example_1main() {
 
 	coap_set_log_level(log_level);
 
-	//Get an instance of the global context
-	context = get_context(SERVER_IP, SERVER_PORT);
-	if (!context)
-		return -1;
+
 
 	ze_coap_init_resources(context);
 
@@ -98,7 +117,8 @@ int Java_eu_tb_zesense_ZeJNIHub_ze_1coap_1server_1example_1main() {
 #endif /* WITHOUT_OBSERVE */
   }
 
-	coap_free_context( ctx );
+	coap_free_context( cctx );
+	sm_free_context( smctx );
 
 	return 0;
 }

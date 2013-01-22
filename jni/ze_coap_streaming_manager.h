@@ -7,6 +7,33 @@
  * <marco.zavatta@mail.polimi.it>
  */
 
+
+#include <android/sensor.h>
+
+
+/* Error conditions */
+#define SM_ERROR			(-1)
+#define SM_URI_REPLACED 	1
+#define SM_STREAM_REPLACED	2
+#define SM_NEGATIVE			3
+
+/* Request codes
+ * mirroring start_stream() and
+ * stop_stream() calls */
+#define SM_REQ_START		10
+#define SM_REQ_STOP			20
+
+/* Synchronization settings */
+#define RTP_CLOCK_FREQ		200
+
+/* Sensor settings */
+#define ACCEL_MAX_FREQ		100
+#define GYRO_MAX_FREQ		200
+#define LIGHT_MAX_FREQ		200
+
+/* Streaming Manager settings */
+#define SM_RBUF_SIZE		20
+
 /**
  * Binds a sensor source @p sensor to a specific @p URI.
  * Only one URI can be associated to a sensor source;
@@ -22,7 +49,7 @@
  */
 int bind_source(stream_context_t *mngr, int sensor, str uri);
 
-/*
+/**
  * Binds the given @p server to Streaming Manager @p mngr
  * in order to relay notifications to him.
  */
@@ -93,13 +120,19 @@ int is_streaming(stream_context_t *mngr, int sensor, 	coap_address_t *dest);
 int get_single_sample(stream_context_t *mngr, int sensor,
 		unsigned char *data, int length);
 
-
+/**
+ * Streaming Manager's global context
+ * Array indexes mirror Android-defined sensor types
+ */
 typedef struct stream_context_t {
 	/* Sensors sources available for streaming */
 	ze_sensor_t sensor[13];
 
 	/* The server we're sending the streams to */
 	coap_context_t server = NULL;
+
+	/* Request buffer available for a multithread implementation */
+	ze_request_t rbuf[SM_RBUF_SIZE];
 };
 
 
@@ -150,7 +183,16 @@ typedef struct ze_payload_t {
 	unsigned char *pyl;
 };
 
+typedef struct ze_request_t {
+	/* Request type */
+	int rtype;
 
+	//TODO: could use a union
 
+	/* Request parameters, NULL when they do not apply */
+	int sensor;
+	coap_address_t *dest;
+	int freq;
+};
 
 
