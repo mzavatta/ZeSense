@@ -287,6 +287,8 @@ anche se il thread che riceve le richieste è un pò più caricato non fa niente
 - pick some from the request queue
 (using get_req_buf_item), do the actions requested
 
+- even if we don't have a stream for that sample, update the last known value in the virtual file system
+
 - ad ogni sample per ogni stream su quel sensore guarda se la f è adatta e se si lo invia usando notify()
 (in notify non need to care whether a minimum number of CON are being sent, if we want in here we notify
 all NONC and the notify will add the CON for us)

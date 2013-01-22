@@ -16,6 +16,7 @@
 #define SM_URI_REPLACED 	1
 #define SM_STREAM_REPLACED	2
 #define SM_NEGATIVE			3
+#define SM_EMPTY			4
 
 /* Request codes
  * mirroring start_stream() and
@@ -33,6 +34,14 @@
 
 /* Streaming Manager settings */
 #define SM_RBUF_SIZE		20
+
+/* Other settings, to be moved */
+#define ZE_NUMSENSORS		13+1 //+1 is for array declarations
+
+/* Utilities */
+#define TRUE 	0
+#define FALSE 	1
+
 
 /**
  * Binds a sensor source @p sensor_id to a specific @p URI.
@@ -126,7 +135,7 @@ int sm_get_single_sample(stream_context_t *mngr, int sensor_id,
  */
 typedef struct stream_context_t {
 	/* Sensors sources available for streaming */
-	ze_sensor_t sensor[13];
+	ze_sensor_t sensor[ZE_NUMSENSORS];
 
 	/* The server we're sending the streams to */
 	coap_context_t server = NULL;

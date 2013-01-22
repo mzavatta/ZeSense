@@ -22,6 +22,8 @@ int Java_eu_tb_zesense_ZeJNIHub_ze_1coap_1server_1core() {
 	/* Spawn *all* the threads from here, this thread has no other function
 	 * except for instantiating the CoAP, SM contexts and the two buffers
 	 * and passing their references to the threads.
+	 *
+	 * This thread is in some way the lifecycle manager of the system.
 	 */
 
 	/* Contexts and buffers; NEVER to reallocate, move or delete because
