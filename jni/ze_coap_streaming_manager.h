@@ -17,6 +17,7 @@
 #define SM_STREAM_REPLACED	2
 #define SM_NEGATIVE			3
 #define SM_EMPTY			4
+#define SM_OUT_RANGE		5
 
 /* Request codes
  * mirroring start_stream() and
@@ -26,6 +27,7 @@
 
 /* Synchronization settings */
 #define RTP_CLOCK_FREQ		200
+#define RTP_TS_START		450	//debug value
 
 /* Sensor settings */
 #define ACCEL_MAX_FREQ		100
@@ -43,6 +45,13 @@
 #define FALSE 	1
 
 
+inline int CHECK_OUT_RANGE(int sensor) {
+if (sensor<0 || sensor>=ZE_NUMSENSORS) {
+	printf("sensor type out of range");
+	return SM_OUT_RANGE;
+}	}
+
+
 /**
  * Binds a sensor source @p sensor_id to a specific @p URI.
  * Only one URI can be associated to a sensor source;
@@ -53,12 +62,13 @@
  * @param uri		String variable to associate to @p sensor_id
  *
  * @return Zero on success and first association,
- * @c SM_URI_REPLACED if successful and association overwritten
- * @c SM_ERROR on failure
+ * (TODO @c SM_URI_REPLACED if successful and association overwritten)
+ * @c SM_OUT_RANGE if @p sensor_id is out of bound, @c SM_ERROR on failure
  */
 int sm_bind_source(stream_context_t *mngr, int sensor_id, str uri);
 
 /**
+ * TODO
  * Binds the given @p server to Streaming Manager @p mngr
  * in order to relay notifications to him.
  */
@@ -79,13 +89,17 @@ int sm_bind_server(stream_context_t *mngr, coap_context_t *server);
  * the timestamps policy (for now they are fixed and hard-coded)
  * maybe even in the form of some query language
  *
+ * TODO: do we let the sender specify the timestamp clock rate or
+ * we decide it as a "profile" like the RTP/AVP?
+ *
  * @param mngr		The Streaming Manager context
  * @param sensor_id	The sensor source of data
  * @param dest		The IP/port coordinates of the destination
  * @param freq		The frequency of notifications
  *
  * @return Zero on success, @c SM_STREAM_REPLACED if the new stream
- * replaced an existing one, @c SM_ERROR on failure
+ * replaced an existing one, @c SM_OUT_RANGE if @p sensor_id is out of bound,
+ * @c SM_ERROR on failure
  */
 int sm_start_stream(stream_context_t *mngr, int sensor_id, coap_address_t dest, int freq);
 
@@ -99,6 +113,7 @@ int sm_start_stream(stream_context_t *mngr, int sensor_id, coap_address_t dest, 
  *
  * @return Zero on success, @c SM_ERROR on failure
  * (e.g. the stream does not exist)
+ * @c SM_OUT_RANGE if @p sensor_id is out of bound
  */
 int sm_stop_stream(stream_context_t *mngr, int sensor_id, coap_address_t dest);
 
@@ -111,22 +126,30 @@ int sm_stop_stream(stream_context_t *mngr, int sensor_id, coap_address_t dest);
  * @param dest		The IP/port coordinates of the destination
  *
  * @return Zero if positive answer, @c SM_NEGATIVE otherwise
+ * @c SM_OUT_RANGE if @p sensor_id is out of bound
  */
 int sm_is_streaming(stream_context_t *mngr, int sensor_id, coap_address_t dest);
+
 
 /**
  * Returns a single sample of @p sensor_id
  * Is is put in the container @p data of length @p length
  * The memory allocated for @p data will not be freed.
  *
- * @param mngr		The Streaming Manager context
+ * @param cache		The event cache
  * @param sensor_id	The sensor source of data
- * @param data		Data bytes
- * @param length	Length of the @p data field
+ * @param data		Data bytes returned
+ * @param length	Length of the @p data field returned
  *
- * @return Zero on success, @c SM_ERROR on failure
+ * @return Zero on success, @c SM_OUT_RANGE if @p sensor_id is out of bound,
+ * @c SM_ERROR on failure
  */
-int sm_get_single_sample(stream_context_t *mngr, int sensor_id,
+// XXX isn't this now part of the sample cache?! well if we want to isolate the
+// coap GET handler from all the payload formatting we should do it here
+// it will be anyway the receiver thread that does it but conceptually it's
+// a streaming manager job (because of the payload formatting work)..
+// or the sample cache's job because of the cache access work
+int sm_get_single_sample(ze_sample_cache_t *cache, int sensor_id,
 		unsigned char *data, int length);
 
 /**
@@ -135,15 +158,15 @@ int sm_get_single_sample(stream_context_t *mngr, int sensor_id,
  */
 typedef struct stream_context_t {
 	/* Sensors sources available for streaming */
-	ze_sensor_t sensor[ZE_NUMSENSORS];
+	ze_sensor_t sensors[ZE_NUMSENSORS];
 
-	/* The server we're sending the streams to */
-	coap_context_t server = NULL;
+	/* The server we're sending the streams through */
+	coap_context_t *server = NULL;
 
-	//Transferred elsewhere... it does not belong here..
-	//it belongs where the instance of stream_context_t is!
-	/* Request buffer available for a multithread implementation */
-	//ze_request_t rbuf[SM_RBUF_SIZE];
+	/* Android sensor infrastructure */
+	ASensorManager* sensorManager;
+	ASensorEventQueue* sensorEventQueue;
+	ALooper* looper;
 };
 
 /**
@@ -263,8 +286,11 @@ void init_req_buf(ze_request_buf_t *buf) {
 
 typedef struct ze_sensor_t {
 	/* Association sensor-resource */
-	int sensor;
+	int sensor; //Useless if we use an array whose index is mirrored to sensor types
 	str uri;
+
+	/* XXX: does const make sense? */
+	const ASensor* android_sensor_handle;
 
 	/* Quick access to last known sensor value */
 	ASensorEvent last_known_event;
@@ -305,7 +331,7 @@ typedef struct ze_payload_container_t {
 typedef struct ze_payload_t {
 	int64_t wts;
 	int rtpts;
-	unsigned char *pyl;
+	unsigned char *data;
 };
 
 typedef struct ze_request_t {
@@ -316,7 +342,7 @@ typedef struct ze_request_t {
 
 	/* Request parameters, NULL when they do not apply */
 	int sensor;
-	coap_address_t *dest;
+	coap_address_t dest;
 	int freq;
 };
 

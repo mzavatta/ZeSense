@@ -43,11 +43,24 @@ int Java_eu_tb_zesense_ZeJNIHub_ze_1coap_1server_1core() {
 	//Instance of notifications buf
 	//Init
 
-	/* Fire threads! */
+    // Open log file
+	char *logpath = LOGPATH;
+	logfd = fopen(logpath,"ab");
+	if(logfd == NULL) {
+		LOGW("unable to open %s", logpath);
+		exit(1);
+	}
+	else LOGI("success opening %s", logpath);
+
+
+	// Log experiment start time
+	if (fputs(ctime(&lt), logfd)<0) LOGW("write failed");
+
+	/* Fire threads! (as the last thing) */
 	/*
 	 * In a three-thread scenario:
-	 * - receiver needs cctx, smctx, smreqbuf, notbuf
-	 * - sm needs smctx, smreqbuf, notbuf
+	 * - receiver needs cctx, smctx, smreqbuf, notbuf, cache
+	 * - sm needs smctx, smreqbuf, notbuf, cache
 	 * - sender needs cctx, smreqbuf, notbuf
 	 *
 	 * (receiver needs smctx because of the tiny bastard pick-up of

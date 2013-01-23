@@ -39,16 +39,21 @@ int update_sample_cache(ze_sample_cache_t *cache, int sensor, ASensorEvent sampl
 
 	pthread_mutex_lock(cache->mtx[sensor]);
 		cache->events[sensor].event = sample;
-		cache->events[sensor].empty = FALSE;
+		cache->events[sensor].empty = FALSE; //not anymore empty
 	pthread_mutex_unlock(cache->mtx[sensor]);
 }
 
 int init_cache(ze_sample_cache_t *cache) {
 
-	//tutte le empty flags a TRUE!
-
-	//inizializzare i mutex
-
+	int i, error;
+	for (i=0; i<ZE_NUMSENSORS; i++) {
+		cache->events[i].empty = TRUE;
+		int error = pthread_mutex_init(cache->mtx[i], NULL);
+		if (error) {
+			fprintf(stderr, "Failed to initialize mtx:%s\n", strerror(error));
+			return SM_ERROR;
+		}
+	}
 }
 
 
