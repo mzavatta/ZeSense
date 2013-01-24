@@ -24,6 +24,7 @@
  * stop_stream() calls */
 #define SM_REQ_START		10
 #define SM_REQ_STOP			20
+#define SM_REQ_ONESHOT		30
 
 /* Synchronization settings */
 #define RTP_CLOCK_FREQ		200
@@ -35,7 +36,7 @@
 #define LIGHT_MAX_FREQ		200
 
 /* Streaming Manager settings */
-#define SM_RBUF_SIZE		20
+
 
 /* Other settings, to be moved */
 #define ZE_NUMSENSORS		13+1 //+1 is for array declarations
@@ -132,6 +133,7 @@ int sm_is_streaming(stream_context_t *mngr, int sensor_id, coap_address_t dest);
 
 
 /**
+ * !! DEPRECATED !!
  * Returns a single sample of @p sensor_id
  * Is is put in the container @p data of length @p length
  * The memory allocated for @p data will not be freed.
@@ -153,6 +155,26 @@ int sm_get_single_sample(ze_sample_cache_t *cache, int sensor_id,
 		unsigned char *data, int length);
 
 /**
+ * Since there can be more than one one-shot request for a given destination
+ * we'll pass the destination and the token to identify it.
+ * This function requests a one-shot reading of the @p sensor_id . It is ensured the
+ * reading to be fresh i.e. if the sensor has been disabled for a while
+ * (sample cache not fresh) it will enable it, do the one-shot reading
+ * and disable it afterwards.
+ *
+ * @param mngr		The Streaming Manager
+ * @param sensor_id	The sensor source of data
+ * @param dest		The IP/port coordinates of the destination
+ * @param tokenlen	The length of the token field
+ * @param token		The token itself
+ *
+ * @return Zero on success, @c SM_ERROR on failure
+ */
+int sm_req_oneshot(stream_context_t *mngr, int sensor_id, coap_address_t dest,
+		size_t tokenlen, unsigned char token[]);
+
+
+/**
  * Streaming Manager's global context
  * Array indexes mirror Android-defined sensor types
  */
@@ -169,135 +191,23 @@ typedef struct stream_context_t {
 	ALooper* looper;
 };
 
-/**
- * Fixed length FIFO buffer (non-circular)
- */
-typedef struct ze_request_buf_t {
-
-	ze_request_t rbuf[SM_RBUF_SIZE];
-
-	/* Indexes, wrap around according to %SM_RBUF_SIZE*/
-	int gethere, puthere;
-
-	/* Item counter, does not wrap around */
-	int counter;
-
-	/* Thread synch (no need of the empty condition) */
-	pthread_mutex_t mtx;
-	pthread_cond_t notfull;
-	//pthread_cond_t notempty;
-};
-
-/**
- * To fit our purposes:
- * - It MUST NOT block on the empty condition. The putter might not
- * feed any more data into it, but we must go on!
- * - It COULD block on the mutex. We're confident that the getter
- * will not starve us.
- *
- * Gets the oldest item in the buffer @p buf. It blocks if the buffer is
- * being used by another thread, it does not block if empty.
- *
- * @param The buffer instance
- *
- * @return The oldest item in the buffer, NULL if buffer empty
- */
-ze_request_t get_req_buf_item(ze_request_buf_t *buf) {
-
-	pthread_mutex_lock(buf->mtx);
-		if (buf->counter <= 0) { //empty (shall never < 0 anyway)
-			/*
-			 * pthread_cond_wait(buf->notempty, buf->mtx);
-			 * do nothing, we must not block!
-			 */
-			return NULL;
-		}
-		else {
-			ze_request_t temp = buf->rbuf[buf->gethere];
-			buf->gethere = ((buf->gethere)+1) % SM_RBUF_SIZE;
-			counter--;
-			pthread_cond_signal(buf->notfull); //surely no longer full
-		}
-	pthread_mutex_unlock(buf->mtx);
-
-	return temp;
-}
-
-/*
- * To fit our purposes:
- * - It SHOULD block on the full condition. Were do we put the message from
- * the network once we've fetched it from the socket?  We're confident that
- * the getter will not starve us.
- * - It SHOULD block on the mutex. We're confident that the getter will not
- * starve us.
- *
- * Puts an item in the buffer @p buf. It blocks if the buffer is
- * being used by another thread, and it also blocks indefinitely is
- * the buffer is full.
- *
- * @param The buffer instance
- * @param The item to be inserted, passed by value
- *
- * @return Zero on success
- */
-int put_req_buf_item(ze_request_buf_t *buf, ze_request_t item) {
-
-	pthread_mutex_lock(buf->mtx);
-		if (buf->counter >= SM_RBUF_SIZE) { //full (greater shall not happen)
-			pthread_cond_wait(buf->notfull, buf->mtx);
-		}
-		buf->rbuf[buf->puthere] = item;
-		buf->puthere = ((buf->puthere)+1) % SM_RBUF_SIZE;
-		counter++;
-		//pthread_cond_signal(buf->notempty); //surely no longer empty
-	pthread_mutex_unlock(buf->mtx);
-
-	return 0;
-}
-
-void init_req_buf(ze_request_buf_t *buf) {
-
-	/* What happens if a thread tries to initialize a mutex or a cond var
-	 * that has already been initialized? "POSIX explicitly
-	 * states that the behavior is not defined, so avoid
-	 * this situation in your programs"
-	 */
-	int error = pthread_mutex_init(buf->mtx, NULL);
-	if (error)
-		fprintf(stderr, "Failed to initialize mtx:%s\n", strerror(error));
-
-	error = pthread_cond_init(buf->notfull, NULL);
-	if (error)
-		fprintf(stderr, "Failed to initialize full cond var:%s\n", strerror(error));
-
-	/*
-	 * error = pthread_cond_init(buf->notempty, NULL);
-	 * if (error)
-	 *	 fprintf(stderr, "Failed to initialize empty cond var:%s\n", strerror(error));
-	 */
-
-	/* Reset pointers */
-	buf->gethere = 0;
-	buf->puthere = 0;
-	buf->counter = 0;
-}
-
-
-
 typedef struct ze_sensor_t {
 	/* Association sensor-resource */
 	int sensor; //Useless if we use an array whose index is mirrored to sensor types
 	str uri;
 
 	/* XXX: does const make sense? */
-	const ASensor* android_sensor_handle;
+	ASensor* android_sensor_handle;
 
 	/* Quick access to last known sensor value */
 	ASensorEvent last_known_event;
 
 	/* List of streams registered on this sensor */
 	//ze_single_stream_t *streams = NULL;
-	ze_single_stream_t *streams = NULL;
+	ze_single_stream_t *streams;
+
+	/* List of one-shot requests registered on this sensor */
+	ze_oneshot_t *oneshots;
 
 	/* Local status variables */
 	int freq;
@@ -306,7 +216,7 @@ typedef struct ze_sensor_t {
 };
 
 typedef struct ze_stream_t {
-	ze_single_stream_t *next = NULL;
+	ze_single_stream_t *next;
 
 	/* In some way this is the lookup key,
 	 * no two elements with the same dest will be present in the list
@@ -323,6 +233,15 @@ typedef struct ze_stream_t {
 	int freq_div;	//Frequency divider
 };
 
+typedef struct ze_oneshot_t {
+	ze_single_stream_t *next;
+
+	/* Lookup key is destination & token */
+	coap_address_t dest;
+	int tknlen;
+	unsigned char *tkn;
+};
+
 typedef struct ze_payload_container_t {
 	ze_payload_t pyl;
 	int length;
@@ -333,17 +252,4 @@ typedef struct ze_payload_t {
 	int rtpts;
 	unsigned char *data;
 };
-
-typedef struct ze_request_t {
-	/* Request type */
-	int rtype;
-
-	//TODO: could use a union
-
-	/* Request parameters, NULL when they do not apply */
-	int sensor;
-	coap_address_t dest;
-	int freq;
-};
-
 

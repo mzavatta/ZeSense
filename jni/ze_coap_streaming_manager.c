@@ -237,6 +237,12 @@ void ze_coap_streaming_thread(stream_context_t *mngr, ze_request_buf_t *smreqbuf
 		else if (request.rtype == SM_REQ_STOP) {
 			sm_start_stream(mngr, request.sensor, request.dest);
 		}
+		else if (request.rtype == SM_REQ_ONESHOT) {
+
+			//if the sensor is active, take sample from cache and send
+			//if the sensor is not active, register one shot request to a given
+			//destination with the given token
+		}
 		//HOW TO IMPLEMENT THE IS STREAMING? IT'S GOTTA GO IN SHARED MEMoRY THAT, TOO..
 		//WE'LL SLAP A BIG LOCK ON IT FOR THE MOMENT.. BTW, DO WE REALLY NEED IT?
 
@@ -249,6 +255,8 @@ void ze_coap_streaming_thread(stream_context_t *mngr, ze_request_buf_t *smreqbuf
 		//ONE SHOT REQUESTS THAT ASK FOR SENSORS. TRANSFER THE CACHE BACK TO THE MAIN STATUS ARRAY
 		//OF THE STREAMING MANAGER
 
+		//I COULD USE ASYNCH REQUESTS INSTEAD OF THE REGISTRATIONS REGISTER
+
 		//is this blocking?
 		if (ASensorEventQueue_getEvents(sensorEventQueue, &event, 1) > 0) {
 
@@ -258,8 +266,8 @@ void ze_coap_streaming_thread(stream_context_t *mngr, ze_request_buf_t *smreqbuf
 						event.acceleration.z);
 
             	//Update cache
-            	//If the streams are disabled,
 
+            	//now four cases: at least one stream and the oneshot
             	//Check if we have streams for that sensor
 				if (ze_streaming_state[ASENSOR_TYPE_ACCELEROMETER].stream != NULL) {
 					//Fot the moment only one observer possible for each sensor
