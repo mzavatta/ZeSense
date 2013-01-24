@@ -92,7 +92,7 @@ void accel_GET_handler (coap_context_t  *context, struct coap_resource_t *resour
 	int freq = 20;
 
 	obs_opt = coap_check_option(request, COAP_OPTION_SUBSCRIPTION, &opt_iter);
-	if (request != NULL && obs_opt) { 	// If there is an observe option
+	if (obs_opt != NULL) { 	// If there is an observe option
 
 		if (resource->observable == 1) {
 
@@ -119,6 +119,7 @@ void accel_GET_handler (coap_context_t  *context, struct coap_resource_t *resour
 			//Ask oneshot representation
 			put_req_buf_item(buf, SM_REQ_ONESHOT, ASENSOR_TYPE_ACCELEROMETER, peer,
 					NULL, token->length, token->s);
+			//Register asynch
 		}
 	}
 
@@ -131,6 +132,7 @@ void accel_GET_handler (coap_context_t  *context, struct coap_resource_t *resour
 		//Ask oneshot representation
 		put_req_buf_item(buf, SM_REQ_ONESHOT, ASENSOR_TYPE_ACCELEROMETER, peer,
 				NULL, token->length, token->s);
+		//Register asynch
 
 		if (coap_find_observer(resource, peer,token) != NULL) {
 

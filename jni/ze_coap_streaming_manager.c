@@ -265,6 +265,7 @@ void ze_coap_streaming_thread(stream_context_t *mngr, ze_request_buf_t *smreqbuf
 
 	while(1) {
 
+
 		// See if there is a request
 		sm_req.rtype = SM_REQ_INVALID;
 		sm_req = get_req_buf_item(smreqbuf);
@@ -296,7 +297,8 @@ void ze_coap_streaming_thread(stream_context_t *mngr, ze_request_buf_t *smreqbuf
 
 				//Mirror the received request in the sender's interface
 				//attaching the payload
-				put_req_buf_item(notbuf, COAP_SEND_ASYNCH, sm_req.sensor, sm_req.dest,
+				put_req_buf_item(notbuf, COAP_SEND_ASYNCH,
+						mngr->sensors[sm_req.sensor].uri, sm_req.dest, COAP_MESSAGE_NON,
 						sm_req.tknlen, sm_req.tkn, pyl);
 
 				//do not free the pyl because it is referenced by the notqueue now!
@@ -337,7 +339,7 @@ void ze_coap_streaming_thread(stream_context_t *mngr, ze_request_buf_t *smreqbuf
             	mngr->sensors[ASENSOR_TYPE_ACCELEROMETER].last_known_event = event;
 
             	/*
-            	 * if we have any oneshot, clear each of them and send a packets
+            	 * if we have any oneshot for this sensor, clear each of them and send a packet
             	 */
 				if (mngr->sensors[ASENSOR_TYPE_ACCELEROMETER].oneshots != NULL) {
 
@@ -362,7 +364,9 @@ void ze_coap_streaming_thread(stream_context_t *mngr, ze_request_buf_t *smreqbuf
 
 						ze_oneshot_t *tempy = mngr->sensors[ASENSOR_TYPE_ACCELEROMETER].oneshots;
 
-						put_req_buf_item(notbuf, COAP_SEND_ASYNCH, NULL, tempy->dest,
+						put_req_buf_item(notbuf, COAP_SEND_ASYNCH,
+								mngr->sensors[ASENSOR_TYPE_ACCELEROMETER].uri,
+								tempy->dest, COAP_MESSAGE_NON,
 								tempy->tknlen, tempy->tkn, pyl);
 
 						mngr->sensors[ASENSOR_TYPE_ACCELEROMETER].oneshots = tempy->next;
@@ -371,10 +375,10 @@ void ze_coap_streaming_thread(stream_context_t *mngr, ze_request_buf_t *smreqbuf
 				}
 
 
-				if (ze_streaming_state[ASENSOR_TYPE_ACCELEROMETER].streams != NULL) {
+				if (mngr->sensors[ASENSOR_TYPE_ACCELEROMETER].streams != NULL) {
 					//Fot the moment only one observer possible for each sensor
 
-					ze_oneshot_t *tempy = ze_streaming_state[ASENSOR_TYPE_ACCELEROMETER].streams;
+					ze_oneshot_t *tempy = mngr->sensors[ASENSOR_TYPE_ACCELEROMETER].streams;
 
 					//Take sample from cache and form payload
 					pyl = malloc(sizeof(ze_payload_t));
@@ -388,7 +392,9 @@ void ze_coap_streaming_thread(stream_context_t *mngr, ze_request_buf_t *smreqbuf
 					pyl->wts = event.timestamp;
 					pyl->rtpts = 4567; //assign the timestamp
 
-					put_req_buf_item(notbuf, COAP_SEND_ASYNCH, tempy->dest,
+					put_req_buf_item(notbuf, COAP_SEND_ASYNCH,
+							mngr->sensors[ASENSOR_TYPE_ACCELEROMETER].uri,
+							tempy->dest, COAP_MESSAGE_NON,
 							tempy->tknlen, tempy->tkn, pyl);
 
 					//do not need to clear anything..

@@ -1,5 +1,4 @@
 
-
 void ze_coap_sender_thread(coap_context_t *context) {
 
 	//TODO: mutexes

@@ -33,16 +33,18 @@ ze_coap_request_t get_req_buf_item(ze_coap_request_buf_t *buf) {
 
 
 
-//payload might be big, do not make a copy of it! and consistently not for the token either
-int put_req_buf_item(ze_coap_request_buf_t *buf, int rtype, coap_address_t dest,
-		int tknlen, unsigned char *tkn, ze_payload_t *pyl) {
+//payload might be big, do not make a copy of it! and consistently not for the uri and token either
+int put_req_buf_item(ze_coap_request_buf_t *buf, int rtype, str uri, coap_address_t dest,
+		int conf, int tknlen, unsigned char *tkn, ze_payload_t *pyl) {
 
 	pthread_mutex_lock(buf->mtx);
 		if (buf->counter >= COAP_RBUF_SIZE) { //full (greater shall not happen)
 			pthread_cond_wait(buf->notfull, buf->mtx);
 		}
 		buf->rbuf[buf->puthere].rtype = rtype;
+		buf->rbuf[buf->puthere].str = str;
 		buf->rbuf[buf->puthere].dest = dest;
+		buf->rbuf[buf->puthere].conf = conf;
 		buf->rbuf[buf->puthere].tknlen = tknlen;
 		buf->rbuf[buf->puthere].tkn = tkn;
 		buf->rbuf[buf->puthere].pyl = pyl;
