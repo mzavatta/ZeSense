@@ -1,4 +1,11 @@
-
+/*
+ * ZeSense Streaming Manager
+ * -- core streaming module
+ *
+ * Marco Zavatta
+ * <marco.zavatta@telecom-bretagne.eu>
+ * <marco.zavatta@mail.polimi.it>
+ */
 
 int sm_bind_source(stream_context_t *mngr, int sensor_id, str uri) {
 
@@ -150,15 +157,15 @@ int android_sensor_activate(stream_context_t *mngr, int sensor, int freq) {
 	CHECK_OUT_RANGE(sensor);
 
 	//Grab reference from Android
-	mngr->sensors[sensor].android_sensor_handle =
+	mngr->sensors[sensor].android_handle =
 			ASensorManager_getDefaultSensor(mngr->sensorManager, sensor);
 
 	//Enable it
-	if (mngr->sensors[sensor].android_sensor_handle != NULL) {
+	if (mngr->sensors[sensor].android_handle != NULL) {
 		ASensorEventQueue_enableSensor(mngr->sensorEventQueue,
-				mngr->sensors[sensor].android_sensor_handle);
+				mngr->sensors[sensor].android_handle);
 		ASensorEventQueue_setEventRate(mngr->sensorEventQueue,
-				mngr->sensors[sensor].android_sensor_handle, freq);
+				mngr->sensors[sensor].android_handle, freq);
 	}
 	else {
 		LOGW("cannot get sensor %d", sensor);
@@ -170,12 +177,12 @@ int android_sensor_activate(stream_context_t *mngr, int sensor, int freq) {
 int android_sensor_changef(stream_context_t *mngr, int sensor, int freq) {
 
 	CHECK_OUT_RANGE(sensor);
-	if (mngr->sensors[sensor].android_sensor_handle == NULL) {
+	if (mngr->sensors[sensor].android_handle == NULL) {
 		LOGW("sensor not initialized in Android");
 		return SM_ERROR;
 	}
 	ASensorEventQueue_setEventRate(mngr->sensorEventQueue,
-			mngr->sensors[sensor].android_sensor_handle, freq);
+			mngr->sensors[sensor].android_handle, freq);
 	return 0;
 }
 
@@ -183,15 +190,42 @@ int android_sensor_changef(stream_context_t *mngr, int sensor, int freq) {
 int android_sensor_turnoff(stream_context_t *mngr, int sensor) {
 
 	CHECK_OUT_RANGE(sensor);
-	if (mngr->sensors[sensor].android_sensor_handle == NULL) {
+	if (mngr->sensors[sensor].android_handle == NULL) {
 		LOGW("sensor not initialized in Android");
 		return SM_ERROR;
 	}
 	ASensorEventQueue_disableSensor(mngr->sensorEventQueue,
-			mngr->sensors[sensor].android_sensor_handle);
+			mngr->sensors[sensor].android_handle);
+	mngr->sensors[sensor].android_handle = NULL;
 	return 0;
 }
 
+
+int sm_new_oneshot(stream_context_t *mngr, int sensor_id, coap_address_t dest,
+		int tknlen, unsigned char *tkn) {
+
+	CHECK_OUT_RANGE(sensor_id);
+
+	ze_oneshot_t *temp = malloc(sizeof(ze_oneshot_t)+tknlen);
+	if (temp == NULL) {
+		LOGW("malloc failed");
+		return SM_ERROR;
+	}
+	temp->dest = dest;
+	temp->tknlen = tknlen;
+	temp->tkn = tkn;
+
+	LL_APPEND(mngr.sensors[sensor_id]->oneshots, temp);
+
+	return 0;
+}
+
+int sm_del_oneshot(stream_context_t *mngr, int sensor_id, coap_address_t dest,
+		int tknlen, unsigned char *tkn) {
+
+
+
+}
 
 
 void ze_coap_streaming_thread(stream_context_t *mngr, ze_request_buf_t *smreqbuf,
@@ -217,32 +251,64 @@ void ze_coap_streaming_thread(stream_context_t *mngr, ze_request_buf_t *smreqbuf
 
 
 	ASensorEvent event;
-	ze_payload_container_t pyl;
-	pyl.pyl->data = &event;
+
+	ze_payload_t *pyl;
 
 	coap_address_t dst;
 	str uri;
 	int rto, rtc, max_age;
 
-	ze_request_t request;
+	ze_sm_request_t sm_req;
+	ze_coap_request_t server_req;
+
+	int queuecount = 0;
 
 	while(1) {
 
+		// See if there is a request
+		sm_req.rtype = SM_REQ_INVALID;
+		sm_req = get_req_buf_item(smreqbuf);
 
-		request = get_req_buf_item(smreqbuf);
+		if (sm_req.rtype == SM_REQ_START) {
+			sm_start_stream(mngr, sm_req.sensor, sm_req.dest, sm_req.freq);
+		}
+		else if (sm_req.rtype == SM_REQ_STOP) {
+			sm_stop_stream(mngr, sm_req.sensor, sm_req.dest);
+		}
+		else if (sm_req.rtype == SM_REQ_ONESHOT) {
 
-		if (request.rtype == SM_REQ_START) {
-			sm_start_stream(mngr, request.sensor, request.dest, request.freq);
-		}
-		else if (request.rtype == SM_REQ_STOP) {
-			sm_start_stream(mngr, request.sensor, request.dest);
-		}
-		else if (request.rtype == SM_REQ_ONESHOT) {
+			if (mngr.sensors[sm_req.sensor].android_handle != NULL) {
 
-			//if the sensor is active, take sample from cache and send
-			//if the sensor is not active, register one shot request to a given
-			//destination with the given token
+				//Sensor is active, suppose cache is fresh
+				event = mngr.sensors[sm_req.sensor].last_known_event;
+
+				//Take sample from cache and form payload
+				pyl = malloc(sizeof(ze_payload_t));
+				if (pyl == NULL)
+					LOGW("malloc failed!");
+				pyl->length = sizeof(ASensorEvent);
+				pyl->data = malloc(pyl.length);
+				if (pyl->data == NULL)
+					LOGW("malloc failed!");
+				*(pyl->data) = event;
+				pyl->wts = event.timestamp;
+				pyl->rtpts = 0;
+
+				//Mirror the received request in the sender's interface
+				//attaching the payload
+				put_req_buf_item(notbuf, COAP_SEND_ASYNCH, sm_req.sensor, sm_req.dest,
+						sm_req.tknlen, sm_req.tkn, pyl);
+
+				//do not free the pyl because it is referenced by the notqueue now!
+			}
+			else {
+				//Register oneshot request
+				sm_new_oneshot(mngr, sm_req.sensor, sm_req.dest, sm_req.tknlen, sm_req.tkn);
+				//Do not free *tkn since now it's referenced by the
+			}
 		}
+
+
 		//HOW TO IMPLEMENT THE IS STREAMING? IT'S GOTTA GO IN SHARED MEMoRY THAT, TOO..
 		//WE'LL SLAP A BIG LOCK ON IT FOR THE MOMENT.. BTW, DO WE REALLY NEED IT?
 
@@ -257,6 +323,8 @@ void ze_coap_streaming_thread(stream_context_t *mngr, ze_request_buf_t *smreqbuf
 
 		//I COULD USE ASYNCH REQUESTS INSTEAD OF THE REGISTRATIONS REGISTER
 
+		while (queuecount < QUEUE_REQ_RATIO) {
+
 		//is this blocking?
 		if (ASensorEventQueue_getEvents(sensorEventQueue, &event, 1) > 0) {
 
@@ -266,32 +334,76 @@ void ze_coap_streaming_thread(stream_context_t *mngr, ze_request_buf_t *smreqbuf
 						event.acceleration.z);
 
             	//Update cache
+            	mngr->sensors[ASENSOR_TYPE_ACCELEROMETER].last_known_event = event;
 
-            	//now four cases: at least one stream and the oneshot
-            	//Check if we have streams for that sensor
-				if (ze_streaming_state[ASENSOR_TYPE_ACCELEROMETER].stream != NULL) {
+            	/*
+            	 * if we have any oneshot, clear each of them and send a packets
+            	 */
+				if (mngr->sensors[ASENSOR_TYPE_ACCELEROMETER].oneshots != NULL) {
+
+					//Take sample from cache and form payload
+					pyl = malloc(sizeof(ze_payload_t));
+					if (pyl == NULL)
+						LOGW("malloc failed!");
+					pyl->length = sizeof(ASensorEvent);
+					pyl->data = malloc(pyl.length);
+					if (pyl->data == NULL)
+						LOGW("malloc failed!");
+					*(pyl->data) = event;
+					pyl->wts = event.timestamp;
+					pyl->rtpts = 0;
+
+
+					//make in this way so that we don't allocate a payload if we don't
+					//have anybody to send to
+
+					//for each oneshot
+					while (mngr->sensors[ASENSOR_TYPE_ACCELEROMETER].oneshots != NULL) {
+
+						ze_oneshot_t *tempy = mngr->sensors[ASENSOR_TYPE_ACCELEROMETER].oneshots;
+
+						put_req_buf_item(notbuf, COAP_SEND_ASYNCH, NULL, tempy->dest,
+								tempy->tknlen, tempy->tkn, pyl);
+
+						mngr->sensors[ASENSOR_TYPE_ACCELEROMETER].oneshots = tempy->next;
+						free(tempy); //it frees the outside but not the token, very good.
+					}
+				}
+
+
+				if (ze_streaming_state[ASENSOR_TYPE_ACCELEROMETER].streams != NULL) {
 					//Fot the moment only one observer possible for each sensor
 
-					//Prepare payload
-					payload->wts = event.timestamp;
-					payload->rtpts = ze_streaming_state[ASENSOR_TYPE_ACCELEROMETER].stream.last_rtpts
-							+ (ze_streaming_state[ASENSOR_TYPE_ACCELEROMETER].stream.freq/RTP_FREQ);
-					payload->debugpayload = 123;
-					payload_length = sizeof(ze_sensor_coap_payload);
+					ze_oneshot_t *tempy = ze_streaming_state[ASENSOR_TYPE_ACCELEROMETER].streams;
 
-					//Fire
-					uri = ze_streaming_state[ASENSOR_TYPE_ACCELEROMETER].uri;
-					dst = ze_streaming_state[ASENSOR_TYPE_ACCELEROMETER].stream.dest;
-					rto = ze_streaming_state[ASENSOR_TYPE_ACCELEROMETER].stream.deadline;
+					//Take sample from cache and form payload
+					pyl = malloc(sizeof(ze_payload_t));
+					if (pyl == NULL)
+						LOGW("malloc failed!");
+					pyl->length = sizeof(ASensorEvent);
+					pyl->data = malloc(pyl.length);
+					if (pyl->data == NULL)
+						LOGW("malloc failed!");
+					*(pyl->data) = event;
+					pyl->wts = event.timestamp;
+					pyl->rtpts = 4567; //assign the timestamp
 
-					//Attention that this goes directly to the socket for the moment..
-					coap_notify(context, uri, dst, &payload, payload_length, COAP_MESSAGE_NON, rto, NULL, NULL, NULL);
+					put_req_buf_item(notbuf, COAP_SEND_ASYNCH, tempy->dest,
+							tempy->tknlen, tempy->tkn, pyl);
+
+					//do not need to clear anything..
+
+					//Update sensor timestamp I guess, based on the frequency..
+
 				}
 				else {
-					LOGW("got accelerometer sample but no streams present for it");
+					//we have cleared all the oneshots and there is no stream
+					//for that sensor
+					android_sensor_turnoff(mngr, ASENSOR_TYPE_ACCELEROMETER);
 				}
 			}
-    	}
+		}
+		}
 	}
 }
 

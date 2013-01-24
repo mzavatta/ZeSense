@@ -25,6 +25,7 @@
 #define SM_REQ_START		10
 #define SM_REQ_STOP			20
 #define SM_REQ_ONESHOT		30
+#define SM_REQ_INVALID		(-1)
 
 /* Synchronization settings */
 #define RTP_CLOCK_FREQ		200
@@ -36,7 +37,7 @@
 #define LIGHT_MAX_FREQ		200
 
 /* Streaming Manager settings */
-
+#define QUEUE_REQ_RATIO		5
 
 /* Other settings, to be moved */
 #define ZE_NUMSENSORS		13+1 //+1 is for array declarations
@@ -170,8 +171,8 @@ int sm_get_single_sample(ze_sample_cache_t *cache, int sensor_id,
  *
  * @return Zero on success, @c SM_ERROR on failure
  */
-int sm_req_oneshot(stream_context_t *mngr, int sensor_id, coap_address_t dest,
-		size_t tokenlen, unsigned char token[]);
+int sm_new_oneshot(stream_context_t *mngr, int sensor_id, coap_address_t dest,
+		int tokenlen, unsigned char *token);
 
 
 /**
@@ -197,7 +198,7 @@ typedef struct ze_sensor_t {
 	str uri;
 
 	/* XXX: does const make sense? */
-	ASensor* android_sensor_handle;
+	ASensor* android_handle;
 
 	/* Quick access to last known sensor value */
 	ASensorEvent last_known_event;
@@ -242,14 +243,4 @@ typedef struct ze_oneshot_t {
 	unsigned char *tkn;
 };
 
-typedef struct ze_payload_container_t {
-	ze_payload_t pyl;
-	int length;
-};
-
-typedef struct ze_payload_t {
-	int64_t wts;
-	int rtpts;
-	unsigned char *data;
-};
 

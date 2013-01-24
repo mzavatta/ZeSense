@@ -1,8 +1,8 @@
 /*
- * ZeSense Streaming Manager
+ * ZeSense CoAP server
  * -- fixed length FIFO buffer (non-circular)
- * 	  for incoming requests to Streaming Manager
- * 	  thread safe implementation
+ * 	  for incoming requests to the CoAP server
+ * 	  from the Sensor Manager
  *
  * Marco Zavatta
  * <marco.zavatta@telecom-bretagne.eu>
@@ -10,11 +10,15 @@
  */
 
 /* Buffer size */
-#define SM_RBUF_SIZE		20
+#define COAP_RBUF_SIZE		20
 
-typedef struct ze_request_buf_t {
+/* Request codes */
+#define COAP_SEND_NOT		50
+#define COAP_SEND_ASYNCH	60
 
-	ze_sm_request_t rbuf[SM_RBUF_SIZE];
+typedef struct ze_coap_request_buf_t {
+
+	ze_coap_request_t rbuf[COAP_RBUF_SIZE];
 
 	/* Indexes, wrap around according to %SM_RBUF_SIZE*/
 	int gethere, puthere;
@@ -28,18 +32,21 @@ typedef struct ze_request_buf_t {
 	//pthread_cond_t notempty;
 };
 
-typedef struct ze_sm_request_t {
+typedef struct ze_coap_request_t {
 	/* Request type */
 	int rtype;
 
 	//TODO: could use a union
 
 	/* Request parameters, NULL when they do not apply */
-	int sensor;
 	coap_address_t dest;
-	int freq;
 	int tknlen;
 	unsigned char *tkn; //remember to allocate a new one!
+
+	ze_payload_container_t *pyl;
+	//actually for this we do not need to allocate a new one
+	//as long as we remember to free it!
+
 };
 
 /**
@@ -51,13 +58,12 @@ typedef struct ze_sm_request_t {
  *
  * Gets the oldest item in the buffer @p buf. It blocks if the buffer is
  * being used by another thread, it does not block if empty.
- * Does not free the stuff, must free it using free_item() !
  *
  * @param The buffer instance
  *
  * @return The oldest item in the buffer, NULL if buffer empty
  */
-ze_sm_request_t* get_req_buf_item(ze_request_buf_t *buf);
+ze_coap_request_t get_req_buf_item(ze_coap_request_buf_t *buf);
 
 /*
  * To fit our purposes:
@@ -69,30 +75,15 @@ ze_sm_request_t* get_req_buf_item(ze_request_buf_t *buf);
  *
  * Puts an item in the buffer @p buf. It blocks if the buffer is
  * being used by another thread, and it also blocks indefinitely is
- * the buffer is full.
- * It DOES creates a copy of any parameter passed to it so the caller may free all
- * dynamically allocated memory after this call.
+ * the buffer is full. It DOES NOT make a copy of the parameters
+ * passed by pointer;
  *
  * @param The buffer instance
  * @param The item to be inserted, passed by value
  *
  * @return Zero on success
  */
-int put_req_buf_item(ze_request_buf_t *buf, int rtype, int sensor, coap_address_t dest,
-		int freq, int tknlen, unsigned char *tkn);
+int put_req_buf_item(ze_coap_request_buf_t *buf, int rtype, int sensor_id, coap_address_t dest,
+		int tknlen, unsigned char *tkn, ze_payload_t *pyl);
 
-
-/**
- * Allocates a new ze_sm_request_t through malloc(), filling it
- * up with the information provided in the parameters. The *tkn
- * parameter is copied as well into newly allocated memory.
- * Thus, if needed, it is possible to free pointers @p dest and @p tkn
- * after this call succeeds.
- *
- * @return NULL on failure, the reference to the newly allocated object
- * otherwise
- */
-ze_sm_request_t* create_item(int rtype, int sensor, coap_address_t *dest,
-		int freq, int tknlen, unsigned char *tkn);
-
-void init_req_buf(ze_request_buf_t *buf);
+void init_req_buf(ze_coap_request_buf_t *buf);

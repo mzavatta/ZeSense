@@ -88,12 +88,20 @@ void accel_GET_handler (coap_context_t  *context, struct coap_resource_t *resour
 	coap_opt_t *obs_opt;
 	unsigned char *obs_opt_time;
 
+	//GET FREQUENCY FROM THE QUERY STRING IN THE REQUEST!
+	int freq = 20;
+
 	obs_opt = coap_check_option(request, COAP_OPTION_SUBSCRIPTION, &opt_iter);
 	if (request != NULL && obs_opt) { 	// If there is an observe option
 
 		if (resource->observable == 1) {
-			// Call on_subscribe
-			resource->on_register(context, resource, peer, request, token);
+
+			put_req_buf_item(buf, SM_REQ_START, ASENSOR_TYPE_ACCELEROMETER, peer,
+					freq, NULL, NULL);
+
+			//Does it replaces it if already existing?
+			coap_add_observer(resource, peer, token);
+
 
 			if (request->hdr->type == COAP_MESSAGE_CON) {
 				// Prepare response as simple ACK, without observe option
@@ -108,7 +116,9 @@ void accel_GET_handler (coap_context_t  *context, struct coap_resource_t *resour
 		}
 		else {
 			// As from draft-coap-observe par4.1 suggestion "unable or unwilling"
-			accel_GET_oneshot_handler(context, resource, peer, request, token, response);
+			//Ask oneshot representation
+			put_req_buf_item(buf, SM_REQ_ONESHOT, ASENSOR_TYPE_ACCELEROMETER, peer,
+					NULL, token->length, token->s);
 		}
 	}
 
@@ -117,70 +127,21 @@ void accel_GET_handler (coap_context_t  *context, struct coap_resource_t *resour
 		//Call on_unregister, the client might have been registered
 		//and as draft-coap-observe par4.1 mandates, the registration must be canceled.
 		//On unregister will perform the necessary checks.
-		resource->on_unregister(context, resource, peer, request, token);
 
-		//Send one-shot resource representation
-		accel_GET_oneshot_handler(context, resource, peer, request, token, response);
+		//Ask oneshot representation
+		put_req_buf_item(buf, SM_REQ_ONESHOT, ASENSOR_TYPE_ACCELEROMETER, peer,
+				NULL, token->length, token->s);
+
+		if (coap_find_observer(resource, peer,token) != NULL) {
+
+			// Stop stream to that peer
+			put_req_buf_item(buf, SM_REQ_STOP, ASENSOR_TYPE_ACCELEROMETER, peer,
+					NULL, NULL, NULL);
+
+			// Delete the observer from the resource register
+			coap_delete_observer(resource, peer, token);
+		}
 	}
 
 	return;
 }
-
-void accel_GET_oneshot_handler(coap_context_t  *context, struct coap_resource_t *resource,
-	      coap_address_t *peer, coap_pdu_t *request, str *token,
-	      coap_pdu_t *response) {
-
-	// Ask the sensor framework give us the payload of one sample
-	int payload_length;
-	unsigned char *payload;
-	payload_length = get_single_sample(SENSOR_TYPE_ACCELEROMETER, payload);
-
-	// The library is going to automatically send a response, with a piggybacked ACK maybe
-
-	//Add options
-	coap_add_option(response, COAP_OPTION_TOKEN, token->length, token->s);
-	//if (max_age!=NULL) coap_add_option(response, COAP_OPTION_MAXAGE, max_age_length, max_age);
-	//if (reg->content_format!=NULL) coap_add_option(response, COAP_OPTION_CONTENT_FORMAT, 2, reg->content_format);
-
-	//Add data
-	coap_add_data(response, payload_length, payload);
-
-	//Fire
-	if (coap_send(context, peer, response) == COAP_INVALID_TID) {
-			debug("cannot send one-shot response %d\n");
-	}
-}
-
-void accel_on_register (coap_context_t  *context, struct coap_resource_t *resource,
-	      coap_address_t *peer, coap_pdu_t *request, str *token) {
-
-	int success1;
-	coap_subscription_t success2;
-
-	int frequency = 20;
-	int deadline = 0;
-
-	success1 = add_stream(SENSOR_TYPE_ACCELEROMETER, peer, frequency, deadline);
-	if (success1 == 0) {
-		success2 = coap_add_observer(resource, peer, token);
-		if (success2 == NULL) LOGE("cannot add registration in the list");
-	}
-	else {
-		// As from draft-coap-observe par4.1 suggestion "unable or unwilling"
-		accel_GET_oneshot_handler(context, resource, peer, request, token, response);
-	}
-
-
-}
-
-void accel_on_unregister (coap_context_t  *context, struct coap_resource_t *resource,
-	      coap_address_t *peer, coap_pdu_t *request, str *token,
-	      coap_pdu_t *response) {
-
-	// Halt the stream in stream manager
-	stop_stream(SENSOR_TYPE_ACCELEROMETER, peer);
-
-	// Delete the observer from the resource register
-	coap_delete_observer(resource, peer, token);
-}
-
