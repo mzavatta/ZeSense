@@ -22,6 +22,7 @@ ze_coap_request_t get_req_buf_item(ze_coap_request_buf_t *buf) {
 		}
 		else {
 			ze_coap_request_t temp = buf->rbuf[buf->gethere];
+			temp.reg = coap_registration_checkout(temp.reg);
 			buf->gethere = ((buf->gethere)+1) % COAP_RBUF_SIZE;
 			counter--;
 			pthread_cond_signal(buf->notfull); //surely no longer full
@@ -31,23 +32,24 @@ ze_coap_request_t get_req_buf_item(ze_coap_request_buf_t *buf) {
 	return temp;
 }
 
-
-
-//payload might be big, do not make a copy of it! and consistently not for the uri and token either
-int put_req_buf_item(ze_coap_request_buf_t *buf, int rtype, str uri, coap_address_t dest,
-		int conf, int tknlen, unsigned char *tkn, ze_payload_t *pyl) {
+int put_req_buf_item(ze_coap_request_buf_t *buf, int rtype, /*str uri, coap_address_t dest,*/
+		coap_registration_t *reg, int conf/*, int tknlen, unsigned char *tkn*/, ze_payload_t *pyl) {
 
 	pthread_mutex_lock(buf->mtx);
 		if (buf->counter >= COAP_RBUF_SIZE) { //full (greater shall not happen)
 			pthread_cond_wait(buf->notfull, buf->mtx);
 		}
 		buf->rbuf[buf->puthere].rtype = rtype;
+		buf->rbuf[buf->puthere].reg = reg;
+		buf->rbuf[buf->puthere].conf = conf;
+		buf->rbuf[buf->puthere].pyl = pyl;
+
+		/*
 		buf->rbuf[buf->puthere].str = str;
 		buf->rbuf[buf->puthere].dest = dest;
-		buf->rbuf[buf->puthere].conf = conf;
 		buf->rbuf[buf->puthere].tknlen = tknlen;
 		buf->rbuf[buf->puthere].tkn = tkn;
-		buf->rbuf[buf->puthere].pyl = pyl;
+		*/
 
 		buf->puthere = ((buf->puthere)+1) % COAP_RBUF_SIZE;
 		counter++;
@@ -58,6 +60,8 @@ int put_req_buf_item(ze_coap_request_buf_t *buf, int rtype, str uri, coap_addres
 }
 
 void init_req_buf(ze_coap_request_buf_t *buf) {
+
+	memset(buf->rbuf, 0, COAP_RBUF_SIZE*(ze_coap_request_t));
 
 	/* What happens if a thread tries to initialize a mutex or a cond var
 	 * that has already been initialized? "POSIX explicitly
@@ -79,7 +83,9 @@ void init_req_buf(ze_coap_request_buf_t *buf) {
 	 */
 
 	/* Reset pointers */
+	/*
 	buf->gethere = 0;
 	buf->puthere = 0;
 	buf->counter = 0;
+	*/
 }

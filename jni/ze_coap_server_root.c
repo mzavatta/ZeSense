@@ -26,7 +26,7 @@ int Java_eu_tb_zesense_ZeJNIHub_ze_1coap_1server_1root() {
 	 * This thread is in some way the lifecycle manager of the system.
 	 */
 
-	/* Contexts and buffers; NEVER to reallocate, move or delete because
+	/* Contexts and buffers; NEVER to reallocate, move or free because
 	 * they are shared among threads! unless we use
 	 * reference counting */
 	coap_context_t  *cctx;
@@ -35,7 +35,7 @@ int Java_eu_tb_zesense_ZeJNIHub_ze_1coap_1server_1root() {
 		return -1;
 
 	stream_context_t *smctx;
-	//Init
+	smctx = get_streaming_manager(cctx);
 
 	ze_request_buf_t smreqbuf;
 	init_req_buf(&smreqbuf);

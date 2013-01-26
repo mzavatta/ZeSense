@@ -15,67 +15,47 @@ int sm_bind_source(stream_context_t *mngr, int sensor_id, str uri) {
 	return 0;
 }
 
-int sm_start_stream(stream_context_t *mngr, int sensor_id, coap_address_t dest, int freq) {
+int sm_start_stream(stream_context_t *mngr, int sensor_id, coap_registration_t *reg, int freq) {
 
 	CHECK_OUT_RANGE(sensor_id);
 
-	//FIXME: for the moment we support only one stream for
-	//it saves some time on the linked list management
-
-	ze_sensor_t *sensor = &(mngr->sensors[sensor_id]);
 	ze_stream_t *streams = sensor->streams;
 	ze_stream_t *sub, *newstream;
 
-	//Prepare stream item
-	newstream = (ze_stream_t *) malloc(sizeof(ze_stream_t));
-	if (newstream == NULL) {
-		LOGW("new stream malloc failed");
-		return SM_ERROR;
-	}
-	memset(newstream, 0, sizeof(ze_stream_t));
-	ns->next = NULL;
-	ns->freq = freq;
-	ns->dest = dest;
-	ns->last_rtpts = SM_RTPTS_START;
+	newstream = sm_new_stream(reg, freq);
 	//TODO: last_wts
 	//TODO: randomize rtpts since it's its first assignment
 	//TODO: frequency divider to be considered based on the current sampling frequency
 
-	if (streams == NULL) { //First stream of this sensor
-
-		//Activate sampling
-		android_sensor_activate(mngr, sensor_id, sensor->freq);
-
-		//Insert stream in the list
-		//LL_APPEND(streams);
-		streams = newstream;
-
+	if (mngr->sensors[sensor_id] == NULL) {
+		/* First stream of this sensor
+		 * Activate the sensor and append
+		 */
+		android_sensor_activate(mngr, sensor_id, freq);
+		LL_APPEND(mngr->sensors[sensor_id].streams, newstream);
 		return 0;
 	}
 	else {
+		/* There are others streams, might need to substitute one
+		 * and anyway not to activate but maybe change frequency
+		 */
 
-		//For the moment, we have only one, replace anyhow
-		streams = newstream;
-		sensor->freq = freq;
-		android_sensor_changef(mngr, sensor_id, sensor->freq);
-		return SM_STREAM_REPLACED;
+		if (freq > mngr->sensors[sensor_id].freq) {
+			mngr->sensors[sensor_id].freq = freq;
+			android_sensor_changef(mngr, sensor_id, freq);
+		}
 
-		/*
-		//Try to find the
-		//Reconsider the sensor maximum frequency
-		if (freq > (sensor->freq)) {
-			android_sensor_changef(sensor, sensor_str->freq);
-			sensor->freq = freq;
+		sub = sm_find_stream(mngr, sensor_id, reg);
+		if (sub != NULL) {
+			LL_DELETE(mngr->sensors[sensor_id].streams, sub);
+			LL_APPEND(mngr->sensors[sensor_id].streams, newstream);
+			return SM_STREAM_REPLACED;
 		}
-		//Append or "replace" previous stream if same destination
-		LL_SEARCH(streams, sub, dest, stream_equals_dest);
-		if (sub) { //Stream with same destination present, delete the previous
-			LL_DELETE(streams, sub);
+		else {
+			LL_APPEND(mngr->sensors[sensor_id].streams, newstream);
+			return 0;
 		}
-		LL_APPEND(streams, ns);
-		*/
 	}
-
 	return SM_ERROR;
 }
 
@@ -144,6 +124,35 @@ int sm_is_streaming(stream_context_t *mngr, int sensor_id, coap_address_t dest) 
 	//In the future need to scroll streams list and if I find an element with
 	//same destination, return 0, else SM_NEGATIVE
 }
+
+ze_stream_t *sm_find_stream(stream_context_t *mngr, int sensor_id, coap_registration_t *reg) {
+
+	ze_stream_t *temp = mngr->sensors[sensor_id].streams;
+	while (temp != NULL) {
+		if (temp->reg == reg) break;
+		temp = temp->next;
+	}
+	return temp;
+}
+
+ze_stream_t *sm_new_stream(coap_registration_t *reg, int freq) {
+
+	ze_stream_t new;
+	new = (ze_stream_t *) malloc(sizeof(ze_stream_t));
+	if (new == NULL) {
+		LOGW("new stream malloc failed");
+		return NULL;
+	}
+	memset(new, 0, sizeof(ze_stream_t));
+
+	new->next = NULL;
+	new->reg = reg;
+	new->freq = freq;
+	new->last_rtpts = SM_RTPTS_START;
+
+	return new;
+}
+
 
 
 int stream_equals_dest(ze_single_stream_t *elem, coap_address_t *dest) {
@@ -228,6 +237,27 @@ int sm_del_oneshot(stream_context_t *mngr, int sensor_id, coap_address_t dest,
 }
 
 
+stream_context_t *get_streaming_manager(coap_context_t  *cctx) {
+
+	stream_context_t *temp;
+
+	temp = malloc(sizeof(stream_context_t));
+	if (temp == NULL) {
+		LOGW("cannot allocate streaming manager");
+		return NULL;
+	}
+
+	memset(temp, 0, sizeof(stream_context_t));
+
+	temp->server = cctx;
+
+	temp->sensorManager = NULL;
+	temp->sensorEventQueue = NULL;
+	temp->looper = NULL;
+
+	return temp;
+}
+
 void ze_coap_streaming_thread(stream_context_t *mngr, ze_request_buf_t *smreqbuf,
 		ze_sample_cache_t *cache, notbuf) {
 
@@ -254,34 +284,36 @@ void ze_coap_streaming_thread(stream_context_t *mngr, ze_request_buf_t *smreqbuf
 
 	ze_payload_t *pyl;
 
-	coap_address_t dst;
-	str uri;
 	int rto, rtc, max_age;
 
 	ze_sm_request_t sm_req;
 	ze_coap_request_t server_req;
 
+	/* To control the time spent on streaming
+	 * wrt the time spent on serving requests
+	 */
 	int queuecount = 0;
 
 	while(1) {
-
 
 		// See if there is a request
 		sm_req.rtype = SM_REQ_INVALID;
 		sm_req = get_req_buf_item(smreqbuf);
 
 		if (sm_req.rtype == SM_REQ_START) {
-			sm_start_stream(mngr, sm_req.sensor, sm_req.dest, sm_req.freq);
+			sm_start_stream(mngr, sm_req.sensor, sm_req.reg, sm_req.freq);
 		}
 		else if (sm_req.rtype == SM_REQ_STOP) {
-			sm_stop_stream(mngr, sm_req.sensor, sm_req.dest);
+			sm_stop_stream(mngr, sm_req.sensor, sm_req.reg);
+
+
 		}
 		else if (sm_req.rtype == SM_REQ_ONESHOT) {
 
 			if (mngr.sensors[sm_req.sensor].android_handle != NULL) {
 
 				//Sensor is active, suppose cache is fresh
-				event = mngr.sensors[sm_req.sensor].last_known_event;
+				event = mngr.sensors[sm_req.sensor].event_cache;
 
 				//Take sample from cache and form payload
 				pyl = malloc(sizeof(ze_payload_t));
@@ -336,7 +368,7 @@ void ze_coap_streaming_thread(stream_context_t *mngr, ze_request_buf_t *smreqbuf
 						event.acceleration.z);
 
             	//Update cache
-            	mngr->sensors[ASENSOR_TYPE_ACCELEROMETER].last_known_event = event;
+            	mngr->sensors[ASENSOR_TYPE_ACCELEROMETER].event_cache = event;
 
             	/*
             	 * if we have any oneshot for this sensor, clear each of them and send a packet
@@ -392,7 +424,7 @@ void ze_coap_streaming_thread(stream_context_t *mngr, ze_request_buf_t *smreqbuf
 					pyl->wts = event.timestamp;
 					pyl->rtpts = 4567; //assign the timestamp
 
-					put_req_buf_item(notbuf, COAP_SEND_ASYNCH,
+					put_req_buf_item(notbuf, COAP_SEND_NOTIF,
 							mngr->sensors[ASENSOR_TYPE_ACCELEROMETER].uri,
 							tempy->dest, COAP_MESSAGE_NON,
 							tempy->tknlen, tempy->tkn, pyl);

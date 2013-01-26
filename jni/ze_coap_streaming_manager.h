@@ -103,7 +103,7 @@ int sm_bind_server(stream_context_t *mngr, coap_context_t *server);
  * replaced an existing one, @c SM_OUT_RANGE if @p sensor_id is out of bound,
  * @c SM_ERROR on failure
  */
-int sm_start_stream(stream_context_t *mngr, int sensor_id, coap_address_t dest, int freq);
+int sm_start_stream(stream_context_t *mngr, int sensor_id, , int freq);
 
 /**
  * Stops the stream of notifications from @p sensor_id
@@ -175,6 +175,9 @@ int sm_new_oneshot(stream_context_t *mngr, int sensor_id, coap_address_t dest,
 		int tokenlen, unsigned char *token);
 
 
+stream_context_t *get_streaming_manager(coap_context_t  *cctx);
+
+
 /**
  * Streaming Manager's global context
  * Array indexes mirror Android-defined sensor types
@@ -184,7 +187,7 @@ typedef struct stream_context_t {
 	ze_sensor_t sensors[ZE_NUMSENSORS];
 
 	/* The server we're sending the streams through */
-	coap_context_t *server = NULL;
+	coap_context_t *server;
 
 	/* Android sensor infrastructure */
 	ASensorManager* sensorManager;
@@ -195,13 +198,13 @@ typedef struct stream_context_t {
 typedef struct ze_sensor_t {
 	/* Association sensor-resource */
 	int sensor; //Useless if we use an array whose index is mirrored to sensor types
-	str uri;
+	//str uri;
 
 	/* XXX: does const make sense? */
 	ASensor* android_handle;
 
 	/* Quick access to last known sensor value */
-	ASensorEvent last_known_event;
+	ASensorEvent event_cache;
 
 	/* List of streams registered on this sensor */
 	//ze_single_stream_t *streams = NULL;
@@ -217,13 +220,19 @@ typedef struct ze_sensor_t {
 };
 
 typedef struct ze_stream_t {
-	ze_single_stream_t *next;
+	ze_stream_t *next;
+
+	/* Ticket that identifies the stream
+	 * when interacting with the CoAP server.
+	 */
+	coap_registration_t *reg;
+
 
 	/* In some way this is the lookup key,
 	 * no two elements with the same dest will be present in the list
 	 * as mandated by draft-coap-observe-7
 	 */
-	coap_address_t dest;
+	//coap_address_t dest;
 
 	/* Client specified */
 	int freq;
@@ -238,9 +247,11 @@ typedef struct ze_oneshot_t {
 	ze_single_stream_t *next;
 
 	/* Lookup key is destination & token */
+	/*
 	coap_address_t dest;
 	int tknlen;
 	unsigned char *tkn;
+	*/
 };
 
 

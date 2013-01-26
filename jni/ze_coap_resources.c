@@ -77,18 +77,12 @@ void accel_GET_handler (coap_context_t  *context, struct coap_resource_t *resour
 	      coap_address_t *peer, coap_pdu_t *request, str *token,
 	      coap_pdu_t *response) {
 
-	/*
-	 * remember to null the coap_resource_t copy of the pointer inside the state table
-	 * in the streaming manager, otherwise it will continue to use it
-	 * even if the resource is gone
-	 */
-
 	coap_opt_iterator_t opt_iter;
 	int sub_success = -1;
 	coap_opt_t *obs_opt;
 	unsigned char *obs_opt_time;
 
-	//GET FREQUENCY FROM THE QUERY STRING IN THE REQUEST!
+	//TODO: GET FREQUENCY FROM THE QUERY STRING IN THE REQUEST!
 	int freq = 20;
 
 	obs_opt = coap_check_option(request, COAP_OPTION_SUBSCRIPTION, &opt_iter);
@@ -96,10 +90,12 @@ void accel_GET_handler (coap_context_t  *context, struct coap_resource_t *resour
 
 		if (resource->observable == 1) {
 
-			put_req_buf_item(buf, SM_REQ_START, ASENSOR_TYPE_ACCELEROMETER, peer,
+			put_req_buf_item(buf, SM_REQ_START, ASENSOR_TYPE_ACCELEROMETER, *peer,
 					freq, NULL, NULL);
 
-			//Does it replaces it if already existing?
+			//Does it replaces it if already existing? NOPE!
+			//Now that I modified it, yes.
+			//It also frees the replaced item
 			coap_add_observer(resource, peer, token);
 
 
@@ -117,33 +113,39 @@ void accel_GET_handler (coap_context_t  *context, struct coap_resource_t *resour
 		else {
 			// As from draft-coap-observe par4.1 suggestion "unable or unwilling"
 			//Ask oneshot representation
-			put_req_buf_item(buf, SM_REQ_ONESHOT, ASENSOR_TYPE_ACCELEROMETER, peer,
-					NULL, token->length, token->s);
-			//Register asynch
+			put_req_buf_item(buf, SM_REQ_ONESHOT, ASENSOR_TYPE_ACCELEROMETER, *peer,
+					NULL, *(token->length), token->s);
+
+			coap_register_async(context, peer, request,
+					COAP_ASYNC_SEPARATE, NULL);
+
+			//Need to delete observer here...
 		}
 	}
 
 	else { //There isn't an observe option
 
-		//Call on_unregister, the client might have been registered
-		//and as draft-coap-observe par4.1 mandates, the registration must be canceled.
-		//On unregister will perform the necessary checks.
-
 		//Ask oneshot representation
-		put_req_buf_item(buf, SM_REQ_ONESHOT, ASENSOR_TYPE_ACCELEROMETER, peer,
-				NULL, token->length, token->s);
-		//Register asynch
+		put_req_buf_item(buf, SM_REQ_ONESHOT, ASENSOR_TYPE_ACCELEROMETER, *peer,
+				NULL, *(token->length), token->s);
 
+		coap_register_async(context, peer, request,
+				COAP_ASYNC_SEPARATE, NULL);
+
+		//As per CoAP observer draft, delete this peer from the observer list if present
 		if (coap_find_observer(resource, peer,token) != NULL) {
 
 			// Stop stream to that peer
-			put_req_buf_item(buf, SM_REQ_STOP, ASENSOR_TYPE_ACCELEROMETER, peer,
+			put_req_buf_item(buf, SM_REQ_STOP, ASENSOR_TYPE_ACCELEROMETER, *peer,
 					NULL, NULL, NULL);
 
 			// Delete the observer from the resource register
 			coap_delete_observer(resource, peer, token);
 		}
 	}
+
+	//Free stuff?? no need, we do not allocate anything here and everything that
+	//is passed as parameters is freed by the caller
 
 	return;
 }

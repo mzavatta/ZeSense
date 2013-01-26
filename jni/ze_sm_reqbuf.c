@@ -29,7 +29,10 @@ ze_request_t get_req_buf_item(ze_request_buf_t *buf) {
 			return NULL;
 		}
 		else {
+			// no need to do checkout + release of the coap_registration_t pointer
+			// since the copy in the buffer will be forgotten (overwitten)
 			ze_request_t temp = buf->rbuf[buf->gethere];
+			//buf->rbuf[buf->gethere].tkn = NULL; //null the token pointer
 			buf->gethere = ((buf->gethere)+1) % SM_RBUF_SIZE;
 			counter--;
 			pthread_cond_signal(buf->notfull); //surely no longer full
@@ -40,8 +43,8 @@ ze_request_t get_req_buf_item(ze_request_buf_t *buf) {
 }
 
 // token is not big, we can copy it..
-int put_req_buf_item(ze_request_buf_t *buf, int rtype, int sensor, coap_address_t dest,
-		int freq, int tknlen, unsigned char *tkn) {
+int put_req_buf_item(ze_request_buf_t *buf, int rtype, int sensor, /* coap_address_t dest,*/
+		coap_registration_t *reg, int freq /*int tknlen, unsigned char *tkn*/) {
 
 	pthread_mutex_lock(buf->mtx);
 		if (buf->counter >= SM_RBUF_SIZE) { //full (greater shall not happen)
@@ -51,18 +54,29 @@ int put_req_buf_item(ze_request_buf_t *buf, int rtype, int sensor, coap_address_
 		// Copy contents
 		buf->rbuf[buf->puthere].rtype = rtype;
 		buf->rbuf[buf->puthere].sensor = sensor;
-		buf->rbuf[buf->puthere].dest = dest;
+		buf->rbuf[buf->puthere].reg = coap_registration_ceckout(reg);
 		buf->rbuf[buf->puthere].freq = freq;
+
+		/*
+		buf->rbuf[buf->puthere].dest = dest;
 		buf->rbuf[buf->puthere].tknlen = tknlen;
 
 		// Pay attention to the pointer issue
-		buf->rbuf[buf->puthere].tkn = malloc(item->tknlen);
+		// Alloc everytime since we don't overwrite.
+		// We assume the getter to take care of the new memory zone
+		// Anyway we test if it's null; if it's not null it means that somebody
+		// hasn't gotten the item (we're overwriting) therefore reuse
+		// the previous allocated space
 		if (buf->rbuf[buf->puthere].tkn == NULL) {
-			LOGW("malloc error");
-	pthread_mutex_unlock(buf->mtx);
-			return SM_ERROR;
+			buf->rbuf[buf->puthere].tkn = malloc(item->tknlen);
+			if (buf->rbuf[buf->puthere].tkn == NULL) {
+				LOGW("malloc error");
+				pthread_mutex_unlock(buf->mtx);
+				return SM_ERROR;
+			}
 		}
-		*buf->rbuf[buf->puthere].tkn = *(item->tkn);
+		*(buf->rbuf[buf->puthere].tkn) = *tkn; //copy contents
+		*/
 
 		buf->puthere = ((buf->puthere)+1) % SM_RBUF_SIZE;
 		counter++;
@@ -73,6 +87,8 @@ int put_req_buf_item(ze_request_buf_t *buf, int rtype, int sensor, coap_address_
 }
 
 void init_req_buf(ze_request_buf_t *buf) {
+
+	memset(buf->rbuf, 0, SM_RBUF_SIZE*(ze_sm_request_t));
 
 	/* What happens if a thread tries to initialize a mutex or a cond var
 	 * that has already been initialized? "POSIX explicitly
@@ -93,51 +109,10 @@ void init_req_buf(ze_request_buf_t *buf) {
 	 *	 fprintf(stderr, "Failed to initialize empty cond var:%s\n", strerror(error));
 	 */
 
-	/* Reset pointers */
+	/* Reset indexes */
+	/*
 	buf->gethere = 0;
 	buf->puthere = 0;
 	buf->counter = 0;
+	*/
 }
-
-ze_sm_request_t* create_item(int rtype, int sensor, coap_address_t *dest,
-		int freq, int tknlen, unsigned char *tkn) {
-
-	ze_sm_request_t* temp = malloc(sizeof(ze_sm_request_t));
-	it (temp == NULL) {
-		LOGW("malloc failed");
-		return NULL;
-	}
-	temp->tkn = malloc(tknlen);
-	if (temp->tnk == NULL) {
-		LOGW("malloc failed");
-		return NULL;
-	}
-
-	temp->rtype = rtype;
-	temp->sensor = sensor;
-	temp->dest = &dest;
-	temp->freq = freq;
-	temp->tknlen = tknlen;
-	*(temp->tkn) = *tkn;
-
-	return temp;
-}
-
-//Attention it only frees the tkn!
-void free_item(ze_sm_request_t *item) {
-	free(item->tkn);
-}
-
-typedef struct ze_sm_request_t {
-	/* Request type */
-	int rtype;
-
-	//TODO: could use a union
-
-	/* Request parameters, NULL when they do not apply */
-	int sensor;
-	coap_address_t dest;
-	int freq;
-	int tknlen;
-	unsigned char *tkn; //remember to allocate a new one!
-};

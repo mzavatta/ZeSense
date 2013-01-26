@@ -230,6 +230,7 @@ void check_async(coap_context_t  *ctx, coap_tick_t now) {
 
   size_t size = sizeof(coap_hdr_t) + 8;
 
+
   if (!async || now < async->created + (unsigned long)async->appdata) 
     return;
 

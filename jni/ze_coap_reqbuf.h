@@ -13,8 +13,9 @@
 #define COAP_RBUF_SIZE		20
 
 /* Request codes */
-#define COAP_SEND_NOT		50
-#define COAP_SEND_ASYNCH	60
+#define COAP_SEND_NOTIF			50
+#define COAP_SEND_ASYNCH		60
+#define COAP_STREAM_STOPPED		70
 
 typedef struct ze_coap_request_buf_t {
 
@@ -38,17 +39,13 @@ typedef struct ze_coap_request_t {
 
 	//TODO: could use a union
 
-	/* Request parameters, NULL when they do not apply */
-	str uri;
-	coap_address_t dest;
+	/* Ticket corresponding to the underlying registration */
+	coap_registration_t *reg;
+
+	/* CON or NON */
 	int conf;
-	int tknlen;
-	unsigned char *tkn; //remember to allocate a new one!
 
 	ze_payload_container_t *pyl;
-	//actually for this we do not need to allocate a new one
-	//as long as we remember to free it!
-
 };
 
 /**
@@ -85,7 +82,7 @@ ze_coap_request_t get_req_buf_item(ze_coap_request_buf_t *buf);
  *
  * @return Zero on success
  */
-int put_req_buf_item(ze_coap_request_buf_t *buf, int rtype, str uri, coap_address_t dest,
-		int conf, int tknlen, unsigned char *tkn, ze_payload_t *pyl);
+int put_req_buf_item(ze_coap_request_buf_t *buf, int rtype, /*str uri, coap_address_t dest,*/
+		coap_registration_t *reg, int conf/*, int tknlen, unsigned char *tkn*/, ze_payload_t *pyl);
 
 void init_req_buf(ze_coap_request_buf_t *buf);

@@ -1,7 +1,5 @@
 ze_coap_server_core_thread(coap_context_t *cctx, ze_coap_request_buf_t *notbuf) {
 
-
-
 	//Take request and dispatch
 
 
@@ -55,7 +53,7 @@ ze_coap_server_core_thread(coap_context_t *cctx, ze_coap_request_buf_t *notbuf) 
 			coap_free_async(asy);
 		}
 	}
-	else if (req.rtyp == COAP_SEND_NOT) {
+	else if (req.rtyp == COAP_SEND_NOTIF) {
 
 		//lookup the resource with that uri, actually there may be none
 		//because somebody might have erased it with a DELETE
@@ -65,7 +63,7 @@ ze_coap_server_core_thread(coap_context_t *cctx, ze_coap_request_buf_t *notbuf) 
 		res = coap_get_resource_from_key(context, key);
 		if (res != NULL) {
 			//lookup the subscription within res
-			sub = coap_find_observer_notoken(res, req.dest);
+			sub = coap_find_observer(res, req.dest);
 			if (sub != NULL) {
 
 				//build pdu
@@ -105,6 +103,10 @@ ze_coap_server_core_thread(coap_context_t *cctx, ze_coap_request_buf_t *notbuf) 
 
 	//Consider retransmissions
 
+
+
+
+
 }
 /*
 asynch_equals(coap_async_state_t *one, coap_async_state_t *two) {
@@ -116,17 +118,7 @@ asynch_equals(coap_async_state_t *one, coap_async_state_t *two) {
 }*/
 
 
-coap_subscription_t *
-coap_find_observer_notoken(coap_resource_t *resource, const coap_address_t *peer) {
-  coap_subscription_t *s;
-  assert(resource);
-  assert(peer);
-  LL_FOREACH(resource->subscribers, s) {
-    if (coap_address_equals(&s->subscriber, peer))
-      return s;
-  }
-  return NULL;
-}
+
 
 /* TOKEN COMPARISON, MIGHT BE USEFUL!
 && (!token || (token->length == s->token_length
