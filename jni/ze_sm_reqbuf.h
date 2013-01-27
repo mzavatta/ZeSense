@@ -38,7 +38,8 @@ typedef struct ze_sm_request_t {
 	int sensor;
 
 	/* Ticket corresponding to the underlying registration */
-	coap_registration_t *reg;
+	//coap_registration_t *reg;
+	coap_ticket_t reg;
 
 	int freq;
 	/*

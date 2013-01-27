@@ -103,7 +103,7 @@ int sm_bind_server(stream_context_t *mngr, coap_context_t *server);
  * replaced an existing one, @c SM_OUT_RANGE if @p sensor_id is out of bound,
  * @c SM_ERROR on failure
  */
-int sm_start_stream(stream_context_t *mngr, int sensor_id, , int freq);
+ze_stream_t *sm_start_stream(stream_context_t *mngr, int sensor_id, coap_ticket_t reg, int freq);
 
 /**
  * Stops the stream of notifications from @p sensor_id
@@ -225,16 +225,16 @@ typedef struct ze_stream_t {
 	/* Ticket that identifies the stream
 	 * when interacting with the CoAP server.
 	 */
-	coap_registration_t *reg;
-
+	coap_ticket_t reg;
 
 	/* In some way this is the lookup key,
 	 * no two elements with the same dest will be present in the list
 	 * as mandated by draft-coap-observe-7
+	 * not anymore, it's managed differently now
 	 */
 	//coap_address_t dest;
 
-	/* Client specified */
+	/* Client specified frequency */
 	int freq;
 
 	/* Streaming Manager local status variables */

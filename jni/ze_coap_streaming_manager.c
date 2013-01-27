@@ -15,89 +15,92 @@ int sm_bind_source(stream_context_t *mngr, int sensor_id, str uri) {
 	return 0;
 }
 
-int sm_start_stream(stream_context_t *mngr, int sensor_id, coap_registration_t *reg, int freq) {
+ze_stream_t *sm_start_stream(stream_context_t *mngr, int sensor_id, coap_ticket_t reg, int freq) {
 
 	CHECK_OUT_RANGE(sensor_id);
 
-	ze_stream_t *streams = sensor->streams;
 	ze_stream_t *sub, *newstream;
 
 	newstream = sm_new_stream(reg, freq);
+
 	//TODO: last_wts
 	//TODO: randomize rtpts since it's its first assignment
 	//TODO: frequency divider to be considered based on the current sampling frequency
 
-	if (mngr->sensors[sensor_id] == NULL) {
-		/* First stream of this sensor
-		 * Activate the sensor and append
+
+	if ( mngr->sensors[sensor_id].android_handle == NULL ) {
+		/* Sensor is not active, activate in any case
+		 * Put a check anyway, if a sensor is not active
+		 * the streams should be empty
 		 */
+		if (mngr->sensors[sensor_id].sensors != NULL)
+			LOGW("streaming manager inconsistent state");
+
 		android_sensor_activate(mngr, sensor_id, freq);
-		LL_APPEND(mngr->sensors[sensor_id].streams, newstream);
-		return 0;
 	}
-	else {
-		/* There are others streams, might need to substitute one
-		 * and anyway not to activate but maybe change frequency
-		 */
 
-		if (freq > mngr->sensors[sensor_id].freq) {
-			mngr->sensors[sensor_id].freq = freq;
-			android_sensor_changef(mngr, sensor_id, freq);
-		}
-
-		sub = sm_find_stream(mngr, sensor_id, reg);
-		if (sub != NULL) {
-			LL_DELETE(mngr->sensors[sensor_id].streams, sub);
-			LL_APPEND(mngr->sensors[sensor_id].streams, newstream);
-			return SM_STREAM_REPLACED;
-		}
-		else {
-			LL_APPEND(mngr->sensors[sensor_id].streams, newstream);
-			return 0;
-		}
+	/* Sensor is already active.
+	 * Re-evaluate its frequency based on the new request
+	 */
+	if (freq > mngr->sensors[sensor_id].freq) {
+		mngr->sensors[sensor_id].freq = freq;
+		android_sensor_changef(mngr, sensor_id, freq);
 	}
-	return SM_ERROR;
+
+	/* Replace if there is the same stream already
+	 * if not just insert
+	 */
+	sub = sm_find_stream(mngr, sensor_id, reg);
+	if (sub != NULL) {
+		LL_DELETE(mngr->sensors[sensor_id].streams, sub);
+	LL_APPEND(mngr->sensors[sensor_id].streams, newstream);
+
+	return newstream;
 }
 
-
-int sm_stop_stream(stream_context_t *mngr, int sensor_id, coap_address_t dest) {
+/* best would be to call the stuff with as parameter coap_asynch_checkout(res) */
+int sm_stop_stream(stream_context_t *mngr, int sensor_id, coap_ticket_t reg) {
 
 	CHECK_OUT_RANGE(sensor_id);
 
-	ze_sensor_t *sensor = &(mngr->sensors[sensor_id]);
-	ze_stream_t *streams = sensor->streams;
 	ze_stream_t *del;
+	ze_stream_t *temp;
 
-	//If the sensor has some streams
-	if (streams != NULL) {
+	del = sm_find_stream(mngr, sensor_id, reg);
 
-		//For the moment, there can be only one, delete and shut down
-		free(streams);
-		streams = NULL;
-		android_sensor_turnoff(mngr, sensor_id);
-
-		/*
-		// Find the one with the given destination
-		LL_SEARCH(streams, sub, dest, stream_equals_dest);
-		if (sub) { //Stream with same destination present, delete it
-			LL_DELETE(streams, sub);
-		}
-
-		// If it was the last one
-		if (streams == NULL) {
-			android_sensor_turnoff(sensor);
-		}
-		else { // There are others streams for that sensor, need to reconsider the frequency
-			find max
-			sensor_str->freq = newmaxf;
-			android_sensor_changef(ASENSOR_TYPE_ACCELEROMETER, newmaxf);
-		}
-		*/
-
-		return 0;
+	if (del == NULL) {
+		/* stream not found.. its very strange but anyway */
+		LOGW("inconsistent state in streaming manager, asked to stop"
+				"stream but no streams are active");
+		return SM_ERROR;
 	}
-	LOGW("something went wrong, asked to stop stream but no streams are active");
-	return SM_ERROR;
+
+	/* delete it from this list */
+	LL_DELETE(mngr->sensors[sensor_id].streams, del);
+
+	/* turn off the sensor if it was the last one,
+	 * otherwise reconsider the output frequency of the sensor
+	 * if we've taken out the highest one */
+	if (mngr->sensors[sensor_id].streams == NULL) {
+		android_sensor_turnoff(mngr, sensor_id);
+		mngr->sensors[sensor_id].freq = 0;
+	}
+	else {
+		/* reconsider the maximum frequency, maybe we just stopped
+		 * the stream with the highest one.
+		 * just take the maximum of those left
+		 */
+		temp = mngr->sensors[sensor_id].streams;
+		mngr->sensors[sensor_id].freq = temp->freq;
+		while (temp != NULL) {
+			if (temp->freq > mngr->sensors[sensor_id].freq)
+				mngr->sensors[sensor_id].freq = temp->freq;
+			temp = temp->next;
+		}
+		android_sensor_changef(mngr, sensor_id, mngr->sensors[sensor_id].freq);
+	}
+
+	return 0;
 }
 
 /**
@@ -125,7 +128,7 @@ int sm_is_streaming(stream_context_t *mngr, int sensor_id, coap_address_t dest) 
 	//same destination, return 0, else SM_NEGATIVE
 }
 
-ze_stream_t *sm_find_stream(stream_context_t *mngr, int sensor_id, coap_registration_t *reg) {
+ze_stream_t *sm_find_stream(stream_context_t *mngr, int sensor_id, coap_ticket_t reg) {
 
 	ze_stream_t *temp = mngr->sensors[sensor_id].streams;
 	while (temp != NULL) {
@@ -135,7 +138,7 @@ ze_stream_t *sm_find_stream(stream_context_t *mngr, int sensor_id, coap_registra
 	return temp;
 }
 
-ze_stream_t *sm_new_stream(coap_registration_t *reg, int freq) {
+ze_stream_t *sm_new_stream(coap_ticket_t reg, int freq) {
 
 	ze_stream_t new;
 	new = (ze_stream_t *) malloc(sizeof(ze_stream_t));

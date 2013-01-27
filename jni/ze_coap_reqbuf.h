@@ -83,6 +83,6 @@ ze_coap_request_t get_req_buf_item(ze_coap_request_buf_t *buf);
  * @return Zero on success
  */
 int put_req_buf_item(ze_coap_request_buf_t *buf, int rtype, /*str uri, coap_address_t dest,*/
-		coap_registration_t *reg, int conf/*, int tknlen, unsigned char *tkn*/, ze_payload_t *pyl);
+		coap_ticket_t reg, int conf/*, int tknlen, unsigned char *tkn*/, ze_payload_t *pyl);
 
 void init_req_buf(ze_coap_request_buf_t *buf);
