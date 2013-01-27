@@ -22,11 +22,11 @@ ze_stream_t *sm_start_stream(stream_context_t *mngr, int sensor_id, coap_ticket_
 	ze_stream_t *sub, *newstream;
 
 	newstream = sm_new_stream(reg, freq);
-
-	//TODO: last_wts
-	//TODO: randomize rtpts since it's its first assignment
-	//TODO: frequency divider to be considered based on the current sampling frequency
-
+	/* TODO assign proper values to:
+	 * last_wts
+	 * randomize rtpts since it's its first assignment
+	 * frequency divider to be considered based on the current sampling frequency
+	 */
 
 	if ( mngr->sensors[sensor_id].android_handle == NULL ) {
 		/* Sensor is not active, activate in any case
@@ -53,6 +53,8 @@ ze_stream_t *sm_start_stream(stream_context_t *mngr, int sensor_id, coap_ticket_
 	sub = sm_find_stream(mngr, sensor_id, reg);
 	if (sub != NULL) {
 		LL_DELETE(mngr->sensors[sensor_id].streams, sub);
+		free(sub);
+	}
 	LL_APPEND(mngr->sensors[sensor_id].streams, newstream);
 
 	return newstream;
@@ -75,8 +77,10 @@ int sm_stop_stream(stream_context_t *mngr, int sensor_id, coap_ticket_t reg) {
 		return SM_ERROR;
 	}
 
-	/* delete it from this list */
+	/* Delete it from this list and free its memory */
 	LL_DELETE(mngr->sensors[sensor_id].streams, del);
+	free(del);
+	del = NULL;
 
 	/* turn off the sensor if it was the last one,
 	 * otherwise reconsider the output frequency of the sensor
@@ -89,6 +93,9 @@ int sm_stop_stream(stream_context_t *mngr, int sensor_id, coap_ticket_t reg) {
 		/* reconsider the maximum frequency, maybe we just stopped
 		 * the stream with the highest one.
 		 * just take the maximum of those left
+		 * (TODO: it's not optimized, first of all the deleted stream
+		 * might not have been the maximum, and also the maximum
+		 * of those left might been equal to the previous one)
 		 */
 		temp = mngr->sensors[sensor_id].streams;
 		mngr->sensors[sensor_id].freq = temp->freq;
@@ -100,34 +107,23 @@ int sm_stop_stream(stream_context_t *mngr, int sensor_id, coap_ticket_t reg) {
 		android_sensor_changef(mngr, sensor_id, mngr->sensors[sensor_id].freq);
 	}
 
+	/* send confirm cancellation message to the CoAP server layers
+	 * meaning that we don't hold the ticket anymore
+	 * let's do it outside this function..
+	 */
 	return 0;
 }
 
 /**
- * Checks if a stream from @p sensor_id to destination @p dest
+ * Checks if a stream from @p sensor_id with ticket @p reg
  * is currently running.
  *
  * @param mngr		The Streaming Manager context
  * @param sensor_id	The sensor source of data
- * @param dest		The IP/port coordinates of the destination
+ * @param reg		The ticket given by the lower layer
  *
- * @return Zero if positive answer, @c SM_NEGATIVE otherwise
- * @c SM_OUT_RANGE if @p sensor_id is out of bound
+ * @return The reference to the item if found, NULL otherwise
  */
-int sm_is_streaming(stream_context_t *mngr, int sensor_id, coap_address_t dest) {
-
-	CHECK_OUT_RANGE(sensor_id);
-
-	//For the moment, we have only one to check
-	if ( coap_address_equals( &(mngr->sensors[sensor_id].streams.dest), &dest ) )
-		return 0;
-	else
-		return SM_NEGATIVE;
-
-	//In the future need to scroll streams list and if I find an element with
-	//same destination, return 0, else SM_NEGATIVE
-}
-
 ze_stream_t *sm_find_stream(stream_context_t *mngr, int sensor_id, coap_ticket_t reg) {
 
 	ze_stream_t *temp = mngr->sensors[sensor_id].streams;
@@ -156,11 +152,32 @@ ze_stream_t *sm_new_stream(coap_ticket_t reg, int freq) {
 	return new;
 }
 
+ze_oneshot_t *sm_new_oneshot(coap_ticket_t one) {
 
+	CHECK_OUT_RANGE(sensor_id);
 
-int stream_equals_dest(ze_single_stream_t *elem, coap_address_t *dest) {
-	if (coap_address_equals(element->dest, dest)  == 1) return 0;
-	else return -1;
+	ze_oneshot_t *new;
+	new = (ze_oneshot_t *) malloc(sizeof(ze_oneshot_t));
+	if (new == NULL) {
+		LOGW("new oneshot malloc failed");
+		return NULL;
+	}
+	memset(new, 0, sizeof(ze_oneshot_t));
+
+	new->next = NULL;
+	new->one = one;
+
+	return new;
+}
+
+ze_oneshot_t *sm_find_oneshot(stream_context_t *mngr, int sensor_id, coap_ticket_t one) {
+
+	ze_oneshot_t *temp = mngr->sensors[sensor_id].oneshots;
+	while (temp != NULL) {
+		if (temp->one == one) break;
+		temp = temp->next;
+	}
+	return temp;
 }
 
 
@@ -168,31 +185,34 @@ int android_sensor_activate(stream_context_t *mngr, int sensor, int freq) {
 
 	CHECK_OUT_RANGE(sensor);
 
-	//Grab reference from Android
+	/* Grab reference from Android */
 	mngr->sensors[sensor].android_handle =
 			ASensorManager_getDefaultSensor(mngr->sensorManager, sensor);
 
-	//Enable it
+	/* Enable sensor at the specified frequency */
 	if (mngr->sensors[sensor].android_handle != NULL) {
 		ASensorEventQueue_enableSensor(mngr->sensorEventQueue,
 				mngr->sensors[sensor].android_handle);
 		ASensorEventQueue_setEventRate(mngr->sensorEventQueue,
 				mngr->sensors[sensor].android_handle, freq);
+
+		return 0;
 	}
-	else {
-		LOGW("cannot get sensor %d", sensor);
-		return SM_ERROR;
-	}
-	return 0;
+
+	LOGW("cannot get sensor %d", sensor);
+	return SM_ERROR;
 }
 
 int android_sensor_changef(stream_context_t *mngr, int sensor, int freq) {
 
 	CHECK_OUT_RANGE(sensor);
+
 	if (mngr->sensors[sensor].android_handle == NULL) {
-		LOGW("sensor not initialized in Android");
+		LOGW("inconsistent state in sensor manager, asked changef"
+				"but sensor not initialized in Android");
 		return SM_ERROR;
 	}
+
 	ASensorEventQueue_setEventRate(mngr->sensorEventQueue,
 			mngr->sensors[sensor].android_handle, freq);
 	return 0;
@@ -202,35 +222,21 @@ int android_sensor_changef(stream_context_t *mngr, int sensor, int freq) {
 int android_sensor_turnoff(stream_context_t *mngr, int sensor) {
 
 	CHECK_OUT_RANGE(sensor);
+
 	if (mngr->sensors[sensor].android_handle == NULL) {
-		LOGW("sensor not initialized in Android");
+		LOGW("inconsistent state in sensor manager, asked turnoff"
+				"but sensor not initialized in Android");
 		return SM_ERROR;
 	}
+
 	ASensorEventQueue_disableSensor(mngr->sensorEventQueue,
 			mngr->sensors[sensor].android_handle);
-	mngr->sensors[sensor].android_handle = NULL;
+	mngr->sensors[sensor].android_handle = NULL; //Not clear how Android leaves this pointer
 	return 0;
 }
 
 
-int sm_new_oneshot(stream_context_t *mngr, int sensor_id, coap_address_t dest,
-		int tknlen, unsigned char *tkn) {
 
-	CHECK_OUT_RANGE(sensor_id);
-
-	ze_oneshot_t *temp = malloc(sizeof(ze_oneshot_t)+tknlen);
-	if (temp == NULL) {
-		LOGW("malloc failed");
-		return SM_ERROR;
-	}
-	temp->dest = dest;
-	temp->tknlen = tknlen;
-	temp->tkn = tkn;
-
-	LL_APPEND(mngr.sensors[sensor_id]->oneshots, temp);
-
-	return 0;
-}
 
 int sm_del_oneshot(stream_context_t *mngr, int sensor_id, coap_address_t dest,
 		int tknlen, unsigned char *tkn) {
@@ -285,40 +291,48 @@ void ze_coap_streaming_thread(stream_context_t *mngr, ze_request_buf_t *smreqbuf
 
 	ASensorEvent event;
 
-	ze_payload_t *pyl;
+	ze_payload_t *pyl = NULL;
 
 	int rto, rtc, max_age;
 
 	ze_sm_request_t sm_req;
 	ze_coap_request_t server_req;
 
+	ze_oneshot_t *osreq = NULL;
+	ze_stream_t *stream = NULL;
+
 	/* To control the time spent on streaming
 	 * wrt the time spent on serving requests
 	 */
 	int queuecount = 0;
 
-	while(1) {
+	while(1) { /*thread loop start*/
 
-		// See if there is a request
-		sm_req.rtype = SM_REQ_INVALID;
+		/* Fetch one request from the buffer, if any
+		 * get_rq_buf_item does not block */
 		sm_req = get_req_buf_item(smreqbuf);
 
 		if (sm_req.rtype == SM_REQ_START) {
-			sm_start_stream(mngr, sm_req.sensor, sm_req.reg, sm_req.freq);
+			/* If it returns null, send confirm cancellation message */
+			if ( sm_start_stream(mngr, sm_req.sensor, sm_req.reg, sm_req.freq) )
+				put_req_buf_item(notbuf, COAP_STREAM_STOPPED, sm_req.reg,
+						NULL, NULL);
 		}
 		else if (sm_req.rtype == SM_REQ_STOP) {
+			/* Note that stop_stream frees the memory of the stream it deletes. */
 			sm_stop_stream(mngr, sm_req.sensor, sm_req.reg);
-
-
+			put_req_buf_item(notbuf, COAP_STREAM_STOPPED, sm_req.reg,
+									NULL, NULL);
 		}
 		else if (sm_req.rtype == SM_REQ_ONESHOT) {
 
 			if (mngr.sensors[sm_req.sensor].android_handle != NULL) {
+				/* Sensor is active, suppose cache is fresh
+				 * and serve the oneshot request immediately
+				 */
 
-				//Sensor is active, suppose cache is fresh
+				/* Take sample from cache and form payload */
 				event = mngr.sensors[sm_req.sensor].event_cache;
-
-				//Take sample from cache and form payload
 				pyl = malloc(sizeof(ze_payload_t));
 				if (pyl == NULL)
 					LOGW("malloc failed!");
@@ -326,25 +340,35 @@ void ze_coap_streaming_thread(stream_context_t *mngr, ze_request_buf_t *smreqbuf
 				pyl->data = malloc(pyl.length);
 				if (pyl->data == NULL)
 					LOGW("malloc failed!");
-				*(pyl->data) = event;
+				memcpy(pyl->data, &event, pyl->length);
 				pyl->wts = event.timestamp;
-				pyl->rtpts = 0;
+				pyl->rtpts = 0; //FIXME
 
-				//Mirror the received request in the sender's interface
-				//attaching the payload
-				put_req_buf_item(notbuf, COAP_SEND_ASYNCH,
-						mngr->sensors[sm_req.sensor].uri, sm_req.dest, COAP_MESSAGE_NON,
-						sm_req.tknlen, sm_req.tkn, pyl);
-
-				//do not free the pyl because it is referenced by the notqueue now!
+				/* Mirror the received request in the sender's interface
+				 * attaching the payload. Do not free pyl because not it
+				 * is needed by the notbuf.
+				 */
+				put_req_buf_item(notbuf, COAP_SEND_ASYNCH, sm_req.reg,
+						COAP_MESSAGE_NON, pyl);
 			}
 			else {
-				//Register oneshot request
-				sm_new_oneshot(mngr, sm_req.sensor, sm_req.dest, sm_req.tknlen, sm_req.tkn);
-				//Do not free *tkn since now it's referenced by the
+				/* Sensor is not active, cache may be old.
+				 * Activate the sensor and register oneshot request
+				 * to be satisfied by the first matching sample that
+				 * emerges from the sample queue
+				 */
+				android_sensor_activate(mngr, sm_req.sensor, DEFAULT_FREQ);
+
+				osreq = sm_new_oneshot(sm_req.reg);
+				LL_APPEND(mngr->sensors[sensor_id].oneshots, osreq);
 			}
 		}
 
+		/* Clean temporary variables that are reused in the next phase.
+		 * No need to free what they point to so far, they only serve
+		 * as temporary pointers for searches or similar */
+		osreq = NULL;
+		stream = NULL;
 
 		//HOW TO IMPLEMENT THE IS STREAMING? IT'S GOTTA GO IN SHARED MEMoRY THAT, TOO..
 		//WE'LL SLAP A BIG LOCK ON IT FOR THE MOMENT.. BTW, DO WE REALLY NEED IT?
@@ -362,58 +386,57 @@ void ze_coap_streaming_thread(stream_context_t *mngr, ze_request_buf_t *smreqbuf
 
 		while (queuecount < QUEUE_REQ_RATIO) {
 
-		//is this blocking?
+		/* is this blocking? doesn't seem like.. and that's good */
 		if (ASensorEventQueue_getEvents(sensorEventQueue, &event, 1) > 0) {
 
 			if (event.type == ASENSOR_TYPE_ACCELEROMETER) {
             	LOGI("accel: x=%f y=%f z=%f",
 						event.acceleration.x, event.acceleration.y,
 						event.acceleration.z);
+			}
 
-            	//Update cache
-            	mngr->sensors[ASENSOR_TYPE_ACCELEROMETER].event_cache = event;
+            /* Update cache in any case. */
+            mngr->sensors[event.type].event_cache = event;
 
-            	/*
-            	 * if we have any oneshot for this sensor, clear each of them and send a packet
-            	 */
-				if (mngr->sensors[ASENSOR_TYPE_ACCELEROMETER].oneshots != NULL) {
+            /* If we have any oneshot for this sensor,
+             * we need their tickets,
+             * clear each of them and send them the event.
+             */
+			if (mngr->sensors[event.type].oneshots != NULL) {
 
-					//Take sample from cache and form payload
-					pyl = malloc(sizeof(ze_payload_t));
-					if (pyl == NULL)
-						LOGW("malloc failed!");
-					pyl->length = sizeof(ASensorEvent);
-					pyl->data = malloc(pyl.length);
-					if (pyl->data == NULL)
-						LOGW("malloc failed!");
-					*(pyl->data) = event;
-					pyl->wts = event.timestamp;
-					pyl->rtpts = 0;
+				/* Form payload, it will be the same for each oneshot. */
+				pyl = malloc(sizeof(ze_payload_t));
+				if (pyl == NULL)
+					LOGW("malloc failed!");
+				pyl->length = sizeof(ASensorEvent);
+				pyl->data = malloc(pyl.length);
+				if (pyl->data == NULL)
+					LOGW("malloc failed!");
+				memcpy(pyl->data, &event, pyl->length);
+				pyl->wts = event.timestamp;
+				pyl->rtpts = 0; //TODO
 
-
-					//make in this way so that we don't allocate a payload if we don't
-					//have anybody to send to
-
-					//for each oneshot
-					while (mngr->sensors[ASENSOR_TYPE_ACCELEROMETER].oneshots != NULL) {
-
-						ze_oneshot_t *tempy = mngr->sensors[ASENSOR_TYPE_ACCELEROMETER].oneshots;
-
-						put_req_buf_item(notbuf, COAP_SEND_ASYNCH,
-								mngr->sensors[ASENSOR_TYPE_ACCELEROMETER].uri,
-								tempy->dest, COAP_MESSAGE_NON,
-								tempy->tknlen, tempy->tkn, pyl);
-
-						mngr->sensors[ASENSOR_TYPE_ACCELEROMETER].oneshots = tempy->next;
-						free(tempy); //it frees the outside but not the token, very good.
+				/* Empty this list freeing its elements. */
+				while (mngr->sensors[event.type].oneshots != NULL) {
+					/* Take first element. */
+					osreq = mngr->sensors[event.type].oneshots;
+					/* Use its ticket to send the sample */
+					put_req_buf_item(notbuf, COAP_SEND_ASYNCH,
+							osreq->one, COAP_MESSAGE_NON, pyl);
+					/* Let the head point to the next element before freeing the former. */
+					mngr->sensors[event.type].oneshots = tempy->next;
+					free(osreq);
 					}
-				}
+			}
 
+			/* Done with the oneshots,
+			 * now this sample might also belong to some stream
+			 */
 
-				if (mngr->sensors[ASENSOR_TYPE_ACCELEROMETER].streams != NULL) {
+			if (mngr->sensors[event.type].streams != NULL) {
 					//Fot the moment only one observer possible for each sensor
 
-					ze_oneshot_t *tempy = mngr->sensors[ASENSOR_TYPE_ACCELEROMETER].streams;
+					ze_oneshot_t *tempy = mngr->sensors[event.type].streams;
 
 					//Take sample from cache and form payload
 					pyl = malloc(sizeof(ze_payload_t));
@@ -428,7 +451,7 @@ void ze_coap_streaming_thread(stream_context_t *mngr, ze_request_buf_t *smreqbuf
 					pyl->rtpts = 4567; //assign the timestamp
 
 					put_req_buf_item(notbuf, COAP_SEND_NOTIF,
-							mngr->sensors[ASENSOR_TYPE_ACCELEROMETER].uri,
+							mngr->sensors[event.type].uri,
 							tempy->dest, COAP_MESSAGE_NON,
 							tempy->tknlen, tempy->tkn, pyl);
 
@@ -440,12 +463,16 @@ void ze_coap_streaming_thread(stream_context_t *mngr, ze_request_buf_t *smreqbuf
 				else {
 					//we have cleared all the oneshots and there is no stream
 					//for that sensor
-					android_sensor_turnoff(mngr, ASENSOR_TYPE_ACCELEROMETER);
+					android_sensor_turnoff(mngr, event.type);
 				}
-			}
+
 		}
 		}
-	}
+
+		/* sleep for a while, not much actually */
+		nanosleep(const struct timespec *rqtp, NULL);
+
+	} /*thread loop end*/
 }
 
 

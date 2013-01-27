@@ -10,15 +10,14 @@
  */
 
 
-ze_request_t get_req_buf_item(ze_request_buf_t *buf) {
+ze_sm_request_t get_req_buf_item(ze_request_buf_t *buf) {
 
 	/* Here I have the choice of creating a new item or just pass
 	 * it back by value.
-	 * The only difference is that the caller will need to call free_item
-	 * but actually to free only the tkn!
-	 *
 	 * I would prefer allocating a new space for it but still..
 	 */
+
+	ze_sm_request_t temp;
 
 	pthread_mutex_lock(buf->mtx);
 		if (buf->counter <= 0) { //empty (shall never < 0 anyway)
@@ -26,12 +25,15 @@ ze_request_t get_req_buf_item(ze_request_buf_t *buf) {
 			 * pthread_cond_wait(buf->notempty, buf->mtx);
 			 * do nothing, we must not block!
 			 */
-			return NULL;
+			/* Signal that the buffer is empty by returning
+			 * an invalid request */
+			temp.rtype = SM_REQ_INVALID;
 		}
 		else {
-			// no need to do checkout + release of the coap_registration_t pointer
-			// since the copy in the buffer will be forgotten (overwitten)
-			ze_request_t temp = buf->rbuf[buf->gethere];
+			/* no need to do checkout + release of the coap_registration_t* pointer
+			 * since the copy in the buffer will be forgotten (overwitten)
+			 */
+			temp = buf->rbuf[buf->gethere];
 			//buf->rbuf[buf->gethere].tkn = NULL; //null the token pointer
 			buf->gethere = ((buf->gethere)+1) % SM_RBUF_SIZE;
 			counter--;
@@ -42,7 +44,7 @@ ze_request_t get_req_buf_item(ze_request_buf_t *buf) {
 	return temp;
 }
 
-// token is not big, we can copy it..
+
 int put_req_buf_item(ze_request_buf_t *buf, int rtype, int sensor, /* coap_address_t dest,*/
 		coap_registration_t *reg, int freq /*int tknlen, unsigned char *tkn*/) {
 

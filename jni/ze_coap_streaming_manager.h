@@ -32,6 +32,7 @@
 #define RTP_TS_START		450	//debug value
 
 /* Sensor settings */
+#define DEFAULT_FREQ		10
 #define ACCEL_MAX_FREQ		100
 #define GYRO_MAX_FREQ		200
 #define LIGHT_MAX_FREQ		200
@@ -245,6 +246,11 @@ typedef struct ze_stream_t {
 
 typedef struct ze_oneshot_t {
 	ze_single_stream_t *next;
+
+	/* Ticket that identifies the request
+	 * when interacting with the CoAP server.
+	 */
+	coap_ticket_t one;
 
 	/* Lookup key is destination & token */
 	/*
