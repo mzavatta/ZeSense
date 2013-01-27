@@ -24,7 +24,7 @@ ze_stream_t *sm_start_stream(stream_context_t *mngr, int sensor_id, coap_ticket_
 	newstream = sm_new_stream(reg, freq);
 	/* TODO assign proper values to:
 	 * last_wts
-	 * randomize rtpts since it's its first assignment
+	 * randomize rtpts since its first assignment
 	 * frequency divider to be considered based on the current sampling frequency
 	 */
 
@@ -289,6 +289,8 @@ void ze_coap_streaming_thread(stream_context_t *mngr, ze_request_buf_t *smreqbuf
     LOGI("got sensorEventQueue");
 
 
+
+
 	ASensorEvent event;
 
 	ze_payload_t *pyl = NULL;
@@ -370,20 +372,6 @@ void ze_coap_streaming_thread(stream_context_t *mngr, ze_request_buf_t *smreqbuf
 		osreq = NULL;
 		stream = NULL;
 
-		//HOW TO IMPLEMENT THE IS STREAMING? IT'S GOTTA GO IN SHARED MEMoRY THAT, TOO..
-		//WE'LL SLAP A BIG LOCK ON IT FOR THE MOMENT.. BTW, DO WE REALLY NEED IT?
-
-		//DO A TWO THREAD IMPLEMENTATION
-		//WHERE THE ROLE OF THE RECEIVER IS VERY LIMITED (DISPATCH, AND IF IT'S A SENSOR REQUEST
-		//OF ANY KIND observe OR not.
-		//IF IT'S A ONE-SHOT THEN REGISTER AN ASYNCH TRANSACTION, PASS IT TO THE STREAMING MANAGER
-		//WHO RELAYS IT TO THE SENDER, WHO CLEARS THE ASYNCH TRANSACTION
-		//IMPLEMENT A GENERIC INTERFACE AT THE SENDER TO SEND NOT ONLY NOTIFICATIONS BUT ALSO
-		//ONE SHOT REQUESTS THAT ASK FOR SENSORS. TRANSFER THE CACHE BACK TO THE MAIN STATUS ARRAY
-		//OF THE STREAMING MANAGER
-
-		//I COULD USE ASYNCH REQUESTS INSTEAD OF THE REGISTRATIONS REGISTER
-
 		while (queuecount < QUEUE_REQ_RATIO) {
 
 		/* is this blocking? doesn't seem like.. and that's good */
@@ -399,7 +387,7 @@ void ze_coap_streaming_thread(stream_context_t *mngr, ze_request_buf_t *smreqbuf
             mngr->sensors[event.type].event_cache = event;
 
             /* If we have any oneshot for this sensor,
-             * we need their tickets,
+             * we need their tickets before sending the event,
              * clear each of them and send them the event.
              */
 			if (mngr->sensors[event.type].oneshots != NULL) {
@@ -434,61 +422,50 @@ void ze_coap_streaming_thread(stream_context_t *mngr, ze_request_buf_t *smreqbuf
 			 */
 
 			if (mngr->sensors[event.type].streams != NULL) {
-					//Fot the moment only one observer possible for each sensor
 
-					ze_oneshot_t *tempy = mngr->sensors[event.type].streams;
+				/* Form payload, though it will change for every stream. */
+				pyl = malloc(sizeof(ze_payload_t));
+				if (pyl == NULL)
+					LOGW("malloc failed!");
+				pyl->length = sizeof(ASensorEvent);
+				pyl->data = malloc(pyl.length);
+				if (pyl->data == NULL)
+					LOGW("malloc failed!");
+				memcpy(pyl->data, &event, pyl->length);
+				pyl->wts = event.timestamp;
+				//pyl->rtpts = 4567; //TODO
 
-					//Take sample from cache and form payload
-					pyl = malloc(sizeof(ze_payload_t));
-					if (pyl == NULL)
-						LOGW("malloc failed!");
-					pyl->length = sizeof(ASensorEvent);
-					pyl->data = malloc(pyl.length);
-					if (pyl->data == NULL)
-						LOGW("malloc failed!");
-					*(pyl->data) = event;
-					pyl->wts = event.timestamp;
-					pyl->rtpts = 4567; //assign the timestamp
-
-					put_req_buf_item(notbuf, COAP_SEND_NOTIF,
-							mngr->sensors[event.type].uri,
-							tempy->dest, COAP_MESSAGE_NON,
-							tempy->tknlen, tempy->tkn, pyl);
-
-					//do not need to clear anything..
-
-					//Update sensor timestamp I guess, based on the frequency..
-
+				/* TODO: for the moment notify all the streams regardless of frequency */
+				stream = mngr->sensors[event.type].streams;
+				while (stream != NULL) {
+					put_req_buf_item(notbuf, COAP_SEND_NOT,
+							stream->reg, COAP_MESSAGE_NON, pyl);
+					/*
+					 * we'll likely need to do some operations here,
+					 * like increment the sequence number
+					 * or stuff like that
+					 */
+					stream = stream->next;
 				}
-				else {
-					//we have cleared all the oneshots and there is no stream
-					//for that sensor
-					android_sensor_turnoff(mngr, event.type);
-				}
+			}
+			else {
+				/* we have cleared all the oneshots
+				 * and there is no stream on that sensor
+				 */
+				android_sensor_turnoff(mngr, event.type);
+			}
 
 		}
+		queuecount++;
 		}
+
+		queuecount = 0;
 
 		/* sleep for a while, not much actually */
-		nanosleep(const struct timespec *rqtp, NULL);
+		struct timespec rqtp;
+		sleep.tv_sec = 0;
+		sleep.tv_nsec = 1000000; //1msec
+		nanosleep(rqtp, NULL);
 
 	} /*thread loop end*/
 }
-
-
-/* Thread
-while 1
-- SI scorre la lista per vedere se attivare dei sensori e a che frequenza
-NO, e invece IS! questo lo facciamo fare al server core! tanto la rate di richieste non può essere altissima
-anche se il thread che riceve le richieste è un pò più caricato non fa niente!
-
-- pick some from the request queue
-(using get_req_buf_item), do the actions requested
-
-- even if we don't have a stream for that sample, update the last known value in the sample cache
-
-- ad ogni sample per ogni stream su quel sensore guarda se la f è adatta e se si lo invia usando notify()
-(in notify non need to care whether a minimum number of CON are being sent, if we want in here we notify
-all NONC and the notify will add the CON for us)
-Reliability policy.. per ora tutti NON, poi magari facciamo tutti CON, e poi magari la parametrizziamo...
- */
