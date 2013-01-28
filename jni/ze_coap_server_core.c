@@ -9,6 +9,9 @@ ze_coap_server_core_thread(coap_context_t *cctx, ze_coap_request_buf_t *notbuf) 
 
 	size_t pdusize = 0;
 
+	unsigned char *pyl = NULL;
+	int plylength = 0;
+
 
 	/*
 	 * start by fetching a request and dispatch it
@@ -84,22 +87,39 @@ ze_coap_server_core_thread(coap_context_t *cctx, ze_coap_request_buf_t *notbuf) 
 			//if (sub != NULL) {
 
 		/* Build pdu.
-		 * coap_pdu_init internally does
-		 * pdu = coap_malloc(sizeof(coap_pdu_t) + size);
-		 * therefore size must be large enough for
-		 * header, options and payload
-		 * what I don't understand is if we have to account
-		 * for the option length and jump bytes
+		 * the size parameter given to coap_pdu_init
+		 * consist of a hint on the total message size
+		 * (header + options + data)
+		 * the actual length of the data sent will be computed as
+		 * options and data are added and must turn out <= size
+		 * given to coap_pdu_init. So let's be loose and give
+		 * COAP_MAX_PDU_SIZE (1400 bytes)
 		 */
-		pdusize += sizeof(coap_hdr_t); //header
-		pdusize += req.reg->token_length; //token
-		pdusize += sizeof(unsigned short); //observe
-		pdusize +=
+		//pdusize += sizeof(coap_hdr_t); //header
+		//pdusize += req.reg->token_length; //token
+		//pdusize += sizeof(unsigned short); //observe
+		//pdusize +=
 
-		pdu = coap_pdu_init(req.conf, COAP_RESPONSE_205, asy->message_id, req.pyl->length);
+		/* Transfer our payload structure into a series of bytes.
+		 * Sending only the timestamp and the sensor event for the
+		 * moment
+		 */
+		pyllength = sizeof(int64_t)+sizeof(int)+(req.pyl->length);
+		pyl = malloc(pyllegth);
+		if (pyl == NULL) {
+			LOGW("cannot malloc for payload in server core thread")
+			exit(1);
+		}
+		memcpy(pyl, &(reg.pyl->wts), sizeof(int64_t));
+		memcpy(pyl+sizeof(int64_t), &(req.pyl->length), sizeof(int));
+		memcpy(pyl+sizeof(int64_t)+sizeof(int), reg.pyl->data, reg.pyl->length);
+
+		/* Need to add options in order... */
+		pdu = coap_pdu_init(req.conf, COAP_RESPONSE_205,
+				coap_new_message_id(cctx), COAP_MAX_PDU_SIZE);
 		coap_add_option(pdu, COAP_OPTION_SUBSCRIPTION, sizeof(short), cctx->observe);
 		coap_add_option(pdu, COAP_OPTION_TOKEN, req.reg->token_length, req.reg->token);
-		coap_add_data(pdu, (req.pyl->length)+sizeof(ze_payload_t),	(unsigned char *)req.pyl);
+		coap_add_data(pdu, pyllength, pyl);
 
 		if (req.reg->non_cnt >= COAP_OBS_MAX_NON || req.conf == COAP_MESSAGE_CON) {
 			/* either the max NON have been reached or
@@ -107,30 +127,30 @@ ze_coap_server_core_thread(coap_context_t *cctx, ze_coap_request_buf_t *notbuf) 
 			 * Send a CON and clean the NON counter
 			 */
 			coap_send_confirmed(cctx, req.reg->subscriber, pdu);
-			sub->non_cnt = 0;
+			req.reg->non_cnt = 0;
 		}
 		else {
-			//send a non-confirmable
-			coap_send(cctx, req.dest, pdu);
-			sub->non_cnt++;
+			/* send a non-confirmable
+			 * and increase the NON counter
+			 */
+			coap_send(cctx, req.reg->subscriber, pdu);
+			req.reg->non_cnt++;
 		}
 
-		coap_pdu_clear(pdu, );
+		coap_pdu_clear(pdu, COAP_MAX_PDU_SIZE);
 
-			}
-			else{
-				LOGW("subscription not found within the resource!");
-			}
-		}
-		else {
-			LOGW("resource not found!");
-		}
 	}
+	else {
+		LOGW("Cannot interpret request type");
+	}
+
 
 	free(req.tkn);
 	free(req.pyl);
 
 	//Consider retransmissions
+
+
 
 
 

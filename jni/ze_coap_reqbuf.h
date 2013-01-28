@@ -45,7 +45,7 @@ typedef struct ze_coap_request_t {
 	/* CON or NON */
 	int conf;
 
-	ze_payload_container_t *pyl;
+	ze_payload_t *pyl;
 };
 
 /**
