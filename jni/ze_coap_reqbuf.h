@@ -46,6 +46,17 @@ typedef struct ze_coap_request_t {
 	int conf;
 
 	ze_payload_t *pyl;
+	/* this could be turned into
+	 * unsigned char *pyl;
+	 * int pyllength;
+	 * keeping the ze_payload_t type to be comfortable
+	 * for sizeof(.)
+	 * otherwise the server has to convert the structure
+	 * into an undistinguished unsigned char*  thus
+	 * needing to copy it
+	 * plus we save a free, because in pyl there is another
+	 * pointer, pyl->data with heap memory attached to it
+	 */
 };
 
 /**
