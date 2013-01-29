@@ -56,29 +56,9 @@ int put_req_buf_item(ze_request_buf_t *buf, int rtype, int sensor, /* coap_addre
 		// Copy contents
 		buf->rbuf[buf->puthere].rtype = rtype;
 		buf->rbuf[buf->puthere].sensor = sensor;
-		buf->rbuf[buf->puthere].reg = coap_registration_ceckout(reg);
+		/* Pass the ticket along. */
+		buf->rbuf[buf->puthere].reg = reg;
 		buf->rbuf[buf->puthere].freq = freq;
-
-		/*
-		buf->rbuf[buf->puthere].dest = dest;
-		buf->rbuf[buf->puthere].tknlen = tknlen;
-
-		// Pay attention to the pointer issue
-		// Alloc everytime since we don't overwrite.
-		// We assume the getter to take care of the new memory zone
-		// Anyway we test if it's null; if it's not null it means that somebody
-		// hasn't gotten the item (we're overwriting) therefore reuse
-		// the previous allocated space
-		if (buf->rbuf[buf->puthere].tkn == NULL) {
-			buf->rbuf[buf->puthere].tkn = malloc(item->tknlen);
-			if (buf->rbuf[buf->puthere].tkn == NULL) {
-				LOGW("malloc error");
-				pthread_mutex_unlock(buf->mtx);
-				return SM_ERROR;
-			}
-		}
-		*(buf->rbuf[buf->puthere].tkn) = *tkn; //copy contents
-		*/
 
 		buf->puthere = ((buf->puthere)+1) % SM_RBUF_SIZE;
 		counter++;

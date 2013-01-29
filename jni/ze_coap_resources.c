@@ -78,74 +78,107 @@ void accel_GET_handler (coap_context_t  *context, struct coap_resource_t *resour
 	      coap_pdu_t *response) {
 
 	coap_opt_iterator_t opt_iter;
-	int sub_success = -1;
-	coap_opt_t *obs_opt;
-	unsigned char *obs_opt_time;
+	coap_opt_t *obopt;
+	coap_registration_t *reg;
 
-	//TODO: GET FREQUENCY FROM THE QUERY STRING IN THE REQUEST!
+	/* TODO
+	 * Instead of setting 20Hz by default
+	 * interpret parameters in the request query
+	 * string
+	 */
 	int freq = 20;
 
-	obs_opt = coap_check_option(request, COAP_OPTION_SUBSCRIPTION, &opt_iter);
-	if (obs_opt != NULL) { 	// If there is an observe option
+	obopt = coap_check_option(request, COAP_OPTION_SUBSCRIPTION, &opt_iter);
+	if (obopt != NULL) { //There is an observe option
 
 		if (resource->observable == 1) {
 
-			put_req_buf_item(buf, SM_REQ_START, ASENSOR_TYPE_ACCELEROMETER, *peer,
-					freq, NULL, NULL);
+			/* The returned pointer is either a new pointer or an
+			 * existing one. The reference counter is not incremented
+			 * by coap_add_registration(), not even for the reference
+			 * that is held by the sibling in the registration list.
+			 * The destructor takes care of unplugging the registration
+			 * from the list correctly.
+			 */
+			reg = coap_add_registration(resource, peer, token);
 
-			//Does it replaces it if already existing? NOPE!
-			//Now that I modified it, yes.
-			//It also frees the replaced item
-			coap_add_observer(resource, peer, token);
+			/* The ticket gets created by this call. */
+			put_req_buf_item(buf, SM_REQ_START, ASENSOR_TYPE_ACCELEROMETER,
+					coap_registration_ceckout(reg), freq);
 
 
 			if (request->hdr->type == COAP_MESSAGE_CON) {
-				// Prepare response as simple ACK, without observe option
-				// A default one has been prepared by the caller of this GET handler
-				// and will be sent unless we NULL it
+				/* Prepare response as simple ACK, without observe option
+				 * A default ACK has been prepared by the caller of this GET handler
+				 * so just don't touch it
+				 */
 			}
 			else if (request->hdr->type == COAP_MESSAGE_NON) {
-				// Should not send anything, prepare invalid response
-				// Done by NULLing it (my modification to libcoap)
+				/* Should send nothing in reply at the messaging layer
+				 * (we'll send the response later)
+				 * NULL the proposed response container, so that
+				 * the response that is passed back to the caller
+				 * is discarded. (my modification to libcoap)
+				 */
 				response = NULL;
 			}
+
+			/* Releasing because we've copied the ticket in the message queue.
+			 * Not releasing because we haven't checked it out in this
+			 * routine.*/
+			//coap_registration_release(reg);
 		}
 		else {
-			// As from draft-coap-observe par4.1 suggestion "unable or unwilling"
-			//Ask oneshot representation
-			put_req_buf_item(buf, SM_REQ_ONESHOT, ASENSOR_TYPE_ACCELEROMETER, *peer,
-					NULL, *(token->length), token->s);
+			/* As from draft-coap-observe par4.1 suggestion "unable or unwilling",
+			 * ask one-shot representation to SM. The ticket field is NULL
+			 * at the moment.
+			 */
+			put_req_buf_item(buf, SM_REQ_ONESHOT, ASENSOR_TYPE_ACCELEROMETER,
+					NULL, NULL);
 
+			//FIXME
 			coap_register_async(context, peer, request,
 					COAP_ASYNC_SEPARATE, NULL);
-
-			//Need to delete observer here...
 		}
 	}
 
 	else { //There isn't an observe option
 
-		//Ask oneshot representation
-		put_req_buf_item(buf, SM_REQ_ONESHOT, ASENSOR_TYPE_ACCELEROMETER, *peer,
-				NULL, *(token->length), token->s);
+		/* Ask a regular oneshot representation. */
+		put_req_buf_item(buf, SM_REQ_ONESHOT, ASENSOR_TYPE_ACCELEROMETER,
+				NULL, NULL);
 
+		//FIXME
 		coap_register_async(context, peer, request,
 				COAP_ASYNC_SEPARATE, NULL);
 
-		//As per CoAP observer draft, delete this peer from the observer list if present
-		if (coap_find_observer(resource, peer,token) != NULL) {
-
-			// Stop stream to that peer
-			put_req_buf_item(buf, SM_REQ_STOP, ASENSOR_TYPE_ACCELEROMETER, *peer,
-					NULL, NULL, NULL);
-
-			// Delete the observer from the resource register
-			coap_delete_observer(resource, peer, token);
-		}
+		/* As per CoAP observer draft, clear this registration.
+		 * This must be done through the streaming manager
+		 * SM_REQ_STOP, passing the ticket of the registration.
+		 * It's the resource-specific on_unregister()'s duty.
+		 */
+		reg = coap_find_registration(resource, peer);
+		if (reg != NULL)
+			resource->on_unregister(buf, reg);
 	}
 
-	//Free stuff?? no need, we do not allocate anything here and everything that
-	//is passed as parameters is freed by the caller
-
 	return;
+}
+
+void on_unregister(ze_request_buf_t *buf, coap_registration_t *reg) {
+
+	/*
+	 * Unregistration must be done through the streaming manager
+	 * SM_REQ_STOP, passing the ticket of the registration.
+	 * The streaming manager will confirm the
+	 * cancellation, then the reference count will be decremented
+	 * by the server and if zero the registration destroyed.
+	 * If the streaming manager does not have any stream
+	 * with that ticket (should not happen), it confirms the
+	 * cancellation anyways.
+	 */
+
+	put_req_buf_item(buf, SM_REQ_STOP, ASENSOR_TYPE_ACCELEROMETER,
+			reg, NULL);
+
 }

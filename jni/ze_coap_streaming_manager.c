@@ -323,6 +323,12 @@ void ze_coap_streaming_thread(stream_context_t *mngr, ze_request_buf_t *smreqbuf
 		else if (sm_req.rtype == SM_REQ_STOP) {
 			/* Note that stop_stream frees the memory of the stream it deletes. */
 			sm_stop_stream(mngr, sm_req.sensor, sm_req.reg);
+			/*
+			 * Note that we confirm the cancellation of this ticket
+			 * even if in SM's register there's no such stream.
+			 * This is needed because an issued ticket implies a fixed
+			 * memory chuck allocated by the server's thread.
+			 */
 			put_req_buf_item(notbuf, COAP_STREAM_STOPPED, sm_req.reg,
 									NULL, NULL);
 		}
