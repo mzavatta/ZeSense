@@ -1,8 +1,9 @@
 /*
- * ZeSense CoAP server
+ * ZeSense CoAP Streaming Server
  * -- fixed length FIFO buffer (non-circular)
- * 	  for incoming requests to the CoAP server
- * 	  from the Sensor Manager
+ * 	  for incoming requests to the CoAP Server
+ * 	  from the Streaming Manager
+ * 	  thread-safe implementation
  *
  * Marco Zavatta
  * <marco.zavatta@telecom-bretagne.eu>
@@ -16,12 +17,17 @@
 #define COAP_SEND_NOTIF			50
 #define COAP_SEND_ASYNCH		60
 #define COAP_STREAM_STOPPED		70
+#define COAP_SMREQ_INVALID		40
+
+
+struct ze_coap_request_buf_t;
+struct ze_coap_request_t;
 
 typedef struct ze_coap_request_buf_t {
 
 	ze_coap_request_t rbuf[COAP_RBUF_SIZE];
 
-	/* Indexes, wrap around according to %SM_RBUF_SIZE*/
+	/* Indexes, wrap around according to %COAP_RBUF_SIZE*/
 	int gethere, puthere;
 
 	/* Item counter, does not wrap around */
@@ -73,7 +79,7 @@ typedef struct ze_coap_request_t {
  *
  * @return The oldest item in the buffer, NULL if buffer empty
  */
-ze_coap_request_t get_req_buf_item(ze_coap_request_buf_t *buf);
+ze_coap_request_t get_coap_buf_item(ze_coap_request_buf_t *buf);
 
 /*
  * To fit our purposes:
@@ -93,7 +99,7 @@ ze_coap_request_t get_req_buf_item(ze_coap_request_buf_t *buf);
  *
  * @return Zero on success
  */
-int put_req_buf_item(ze_coap_request_buf_t *buf, int rtype, /*str uri, coap_address_t dest,*/
+int put_coap_buf_item(ze_coap_request_buf_t *buf, int rtype, /*str uri, coap_address_t dest,*/
 		coap_ticket_t reg, int conf/*, int tknlen, unsigned char *tkn*/, ze_payload_t *pyl);
 
-void init_req_buf(ze_coap_request_buf_t *buf);
+void init_coap_buf(ze_coap_request_buf_t *buf);

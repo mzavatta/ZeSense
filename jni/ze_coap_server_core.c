@@ -1,4 +1,20 @@
+/*
+ * ZeSense CoAP server
+ * -- core module
+ *
+ * Marco Zavatta
+ * <marco.zavatta@telecom-bretagne.eu>
+ * <marco.zavatta@mail.polimi.it>
+ *
+ * Built using libcoap by
+ * Olaf Bergmann <bergmann@tzi.org>
+ * http://libcoap.sourceforge.net/
+ */
+
 ze_coap_server_core_thread(coap_context_t *cctx, ze_coap_request_buf_t *notbuf) {
+
+	fd_set readfds;
+	struct timeval tv, *timeout;
 
 	ze_coap_request_t req;
 	coap_address_t dest;
@@ -13,22 +29,81 @@ ze_coap_server_core_thread(coap_context_t *cctx, ze_coap_request_buf_t *notbuf) 
 	int plylength = 0;
 
 
+	while (1) { /*----------------------------------------------------*/
+
+	/* Linux man pages:
+	 * Since select() modifies its file descriptor sets,
+	 * if the call is being  used in a loop,
+	 * then the sets must be reinitialized before each call.
+	 */
+	FD_ZERO(&readfds);
+	FD_SET( ctx->sockfd, &readfds );
+
+	/*----------------- Consider retransmissions ------------------------*/
+
+	nextpdu = coap_peek_next( ctx );
+
+	coap_ticks(&now);
+	while ( nextpdu && nextpdu->t <= now ) {
+		coap_retransmit( ctx, coap_pop_next( ctx ) );
+		nextpdu = coap_peek_next( ctx );
+	}
+
+	/*---------------------- Serve network requests -------------------*/
+
+	tv.tv_usec = 2000; //2msec
+	tv.tv_sec = 0;
+	timeout = &tv;
+
+	/* Interesting actually,
+	 * for the moment do the easy way..
+	 *
+	if ( nextpdu && nextpdu->t <= now + COAP_RESOURCE_CHECK_TIME ) {
+		// set timeout if there is a pdu to send before our automatic timeout occurs
+		tv.tv_usec = ((nextpdu->t - now) % COAP_TICKS_PER_SECOND) * 1000000 / COAP_TICKS_PER_SECOND;
+		tv.tv_sec = (nextpdu->t - now) / COAP_TICKS_PER_SECOND;
+		timeout = &tv;
+	} else {
+		tv.tv_usec = 0;
+		tv.tv_sec = COAP_RESOURCE_CHECK_TIME;
+		timeout = &tv;
+	}
+	*
+	*/
+
+	result = select( FD_SETSIZE, &readfds, 0, 0, timeout );
+
+	if ( result < 0 ) {	/* error */
+		if (errno != EINTR)
+			perror("select");
+	} else if ( result > 0 ) {	/* read from socket */
+		if ( FD_ISSET( ctx->sockfd, &readfds ) ) {
+			coap_read( ctx );	/* read received data */
+			coap_dispatch( ctx );	/* and dispatch PDUs from receivequeue */
+		}
+	} else {	/* timeout */
+		/* coap_check_resource_list( ctx ); */
+	}
+
+	/*------------------------- Serve SM requests ---------------------*/
+
 	/*
-	 * start by fetching a request and dispatch it
+	 * How many times do we listen to SM requests?
+	 */
+	while (smcount < SMREQ_RATIO) {
+
+	/* Start by fetching an SM request and dispatch it
 	 */
 	req = get_req_buf_item(notbuf);
-	/* Recall that the getter does already the checkout
-	 * on the reference counter.
-	 * We must free
+	/* Recall that the getter does not do any checkout not free
+	 * Under this model only the CoAP server manages the ticket
 	 */
 
 	if (req.rtpye == COAP_STREAM_STOPPED) {
-		/* we're sure that no other notification will arrive
-		 * with that ticket. release it on behalf of the streaming
-		 * manager. if there is no ongoing transaction, it will be
-		 * destroyed. after the last ongoing transaction finishes,
-		 * it calls release and if it's the last one holding the
-		 * registration pointer, it will free the memory.
+		/* We're sure that no other notification will arrive
+		 * with that ticket. Release it on behalf of the streaming
+		 * manager. If there is no ongoing transaction, the registration
+		 * associated to it will be destroyed.
 		 */
 		coap_registration_release(req.reg);
 	}
@@ -74,33 +149,6 @@ ze_coap_server_core_thread(coap_context_t *cctx, ze_coap_request_buf_t *notbuf) 
 	}
 	else if (req.rtype == COAP_SEND_NOTIF) {
 
-		//dest = req.reg->subscriber;
-
-		//lookup the resource with that uri, actually there may be none
-		//because somebody might have erased it with a DELETE
-		//while the Sampling Manager was still sending samples
-		//coap_key_t key;
-		//coap_hash(req.uri.s, req.uri.length, key);
-		//res = coap_get_resource_from_key(context, key);
-		//if (res != NULL) {
-			//lookup the subscription within res
-			//sub = coap_find_observer(res, req.dest);
-			//if (sub != NULL) {
-
-		/* Build pdu.
-		 * the size parameter given to coap_pdu_init
-		 * consist of a hint on the total message size
-		 * (header + options + data)
-		 * the actual length of the data sent will be computed as
-		 * options and data are added and must turn out <= size
-		 * given to coap_pdu_init. So let's be loose and give
-		 * COAP_MAX_PDU_SIZE (1400 bytes)
-		 */
-		//pdusize += sizeof(coap_hdr_t); //header
-		//pdusize += req.reg->token_length; //token
-		//pdusize += sizeof(unsigned short); //observe
-		//pdusize +=
-
 		/* Transfer our payload structure into a series of bytes.
 		 * Sending only the timestamp and the sensor event for the
 		 * moment.
@@ -126,15 +174,15 @@ ze_coap_server_core_thread(coap_context_t *cctx, ze_coap_request_buf_t *notbuf) 
 		coap_add_data(pdu, pyllength, pyl);
 
 		if (req.reg->non_cnt >= COAP_OBS_MAX_NON || req.conf == COAP_MESSAGE_CON) {
-			/* either the max NON have been reached or
+			/* Either the max NON have been reached or
 			 * we explicitly requested a CON.
 			 * Send a CON and clean the NON counter
 			 */
-			/* TODO: redo such a function, the registration reference must be
+			/* TODO: rework this function, the registration reference must be
 			 * registered in the transaction record. In other words, we need to pass
 			 * coap_registration_checkout(coap_registration_t *r);
 			 */
-			coap_send_confirmed(cctx, req.reg->subscriber, pdu);
+			coap_notify(cctx, req.reg->subscriber, pdu, req.reg);
 			req.reg->non_cnt = 0;
 		}
 		else {
@@ -151,28 +199,38 @@ ze_coap_server_core_thread(coap_context_t *cctx, ze_coap_request_buf_t *notbuf) 
 		 * free only one byte. The heap manager stores
 		 * when doing malloc() the number of bytes it allocated
 		 * nearby the allocated block. So free will know
-		 * how many bytes to deallocate
+		 * how many bytes to deallocate.
 		 */
 		free(pyl);
 
 	}
+	else if (req.rtype == COAP_SMREQ_INVALID) {
+		/* Buffer's empty, do not loop any more times,
+		 * better to go on doing something else.
+		 */
+		//foundempty = 1;
+	}
 	else {
-		LOGW("Cannot interpret request type");
+		LOGW("Cannot interpret SM request type");
+		exit(1);
 	}
 
-
+	smcount++;
 	free(req.pyl->data);
 	free(req.pyl);
 
+	/* Sleep for a while, not much actually. */
+	struct timespec rqtp;
+	sleep.tv_sec = 0;
+	sleep.tv_nsec = 2000000; //1msec
+	nanosleep(rqtp, NULL);
 
-	//Consider retransmissions
+	}
 
+	smcount=0;
+	foundempty=0;
 
-
-
-
-
-
+	} /*-----------------------------------------------------------------*/
 }
 /*
 asynch_equals(coap_async_state_t *one, coap_async_state_t *two) {

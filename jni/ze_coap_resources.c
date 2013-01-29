@@ -1,73 +1,40 @@
+/*
+ * ZeSense CoAP server
+ * -- resource-specific method handlers
+ *
+ * Marco Zavatta
+ * <marco.zavatta@telecom-bretagne.eu>
+ * <marco.zavatta@mail.polimi.it>
+ */
 
 
-void ze_coap_init_resources(coap_context_t *context) {
+coap_resource_t *ze_coap_init_accel() {
 
-
-  coap_resource_t *r;
-
-  /*
-  r = coap_resource_init(NULL, 0, 0);
-  coap_register_handler(r, COAP_REQUEST_GET, hnd_get_index);
-
-  coap_add_attr(r, (unsigned char *)"ct", 2, (unsigned char *)"0", 1, 0);
-  coap_add_attr(r, (unsigned char *)"title", 5, (unsigned char *)"\"General Info\"", 14, 0);
-  coap_add_resource(ctx, r);
-
-  /* store clock base to use in /time */
-
-  r = ze_coap_init_accel();
-  coap_add_resource(context, r);
-
-
-  my_clock_base = clock_offset;
-
-  r = coap_resource_init((unsigned char *)"time", 4, 0);
-  coap_register_handler(r, COAP_REQUEST_GET, hnd_get_time);
-  coap_register_handler(r, COAP_REQUEST_PUT, hnd_put_time);
-  coap_register_handler(r, COAP_REQUEST_DELETE, hnd_delete_time);
-
-  coap_add_attr(r, (unsigned char *)"ct", 2, (unsigned char *)"0", 1, 0);
-  coap_add_attr(r, (unsigned char *)"title", 5, (unsigned char *)"\"Internal Clock\"", 16, 0);
-  coap_add_attr(r, (unsigned char *)"rt", 2, (unsigned char *)"\"Ticks\"", 7, 0);
-  r->observable = 1;
-  coap_add_attr(r, (unsigned char *)"if", 2, (unsigned char *)"\"clock\"", 7, 0);
-
-  coap_add_resource(ctx, r);
-
-#ifndef WITHOUT_ASYNC
-  r = coap_resource_init((unsigned char *)"async", 5, 0);
-  coap_register_handler(r, COAP_REQUEST_GET, hnd_get_async);
-
-  coap_add_attr(r, (unsigned char *)"ct", 2, (unsigned char *)"0", 1, 0);
-  coap_add_resource(ctx, r);
-#endif /* WITHOUT_ASYNC */
-}
-
-//coap_add_observer(resource, peer, token);
-//coap_add_option(response, COAP_OPTION_SUBSCRIPTION, 0, NULL);
-
-
-
-coap_resource_t * ze_coap_init_accel() {
 	coap_resource_t *r;
-	r = coap_resource_init(NULL, 0, 0);
-	coap_register_handler(r, COAP_REQUEST_GET, hnd_get_index);
-
-	coap_add_attr(r, (unsigned char *)"ct", 2, (unsigned char *)"0", 1, 0);
-	coap_add_attr(r, (unsigned char *)"title", 5, (unsigned char *)"\"General Info\"", 14, 0);
 
 	/*
-	 *   r = coap_resource_init((unsigned char *)"time", 4, 0);
-  coap_register_handler(r, COAP_REQUEST_GET, hnd_get_time);
-  coap_register_handler(r, COAP_REQUEST_PUT, hnd_put_time);
-  coap_register_handler(r, COAP_REQUEST_DELETE, hnd_delete_time);
+	r = coap_resource_init(NULL, 0, 0);
+	coap_register_handler(r, COAP_REQUEST_GET, hnd_get_index);
+	coap_add_attr(r, (unsigned char *)"ct", 2, (unsigned char *)"0", 1, 0);
+	coap_add_attr(r, (unsigned char *)"title", 5, (unsigned char *)"\"General Info\"", 14, 0);
+	*/
 
-  coap_add_attr(r, (unsigned char *)"ct", 2, (unsigned char *)"0", 1, 0);
-  coap_add_attr(r, (unsigned char *)"title", 5, (unsigned char *)"\"Internal Clock\"", 16, 0);
-  coap_add_attr(r, (unsigned char *)"rt", 2, (unsigned char *)"\"Ticks\"", 7, 0);
-  r->observable = 1;
-  coap_add_attr(r, (unsigned char *)"if", 2, (unsigned char *)"\"clock\"", 7, 0);
-	 */
+	r = coap_resource_init((unsigned char *)"accel", 5, 0);
+	coap_register_handler(r, COAP_REQUEST_GET, accel_GET_handler);
+	//coap_register_handler(r, COAP_REQUEST_PUT, hnd_put_time);
+	//coap_register_handler(r, COAP_REQUEST_DELETE, hnd_delete_time);
+
+	/* Need to register on_unregister() handler. */
+	resource->on_unregister = accel_on_unregister;
+
+	r->observable = 1;
+
+	/*
+	coap_add_attr(r, (unsigned char *)"ct", 2, (unsigned char *)"0", 1, 0);
+	coap_add_attr(r, (unsigned char *)"title", 5, (unsigned char *)"\"Internal Clock\"", 16, 0);
+	coap_add_attr(r, (unsigned char *)"rt", 2, (unsigned char *)"\"Ticks\"", 7, 0);
+	coap_add_attr(r, (unsigned char *)"if", 2, (unsigned char *)"\"clock\"", 7, 0);
+	*/
 
 	return r;
 }
@@ -103,7 +70,7 @@ void accel_GET_handler (coap_context_t  *context, struct coap_resource_t *resour
 			reg = coap_add_registration(resource, peer, token);
 
 			/* The ticket gets created by this call. */
-			put_req_buf_item(buf, SM_REQ_START, ASENSOR_TYPE_ACCELEROMETER,
+			put_req_buf_item(context->smreqbuf, SM_REQ_START, ASENSOR_TYPE_ACCELEROMETER,
 					coap_registration_ceckout(reg), freq);
 
 
@@ -133,7 +100,7 @@ void accel_GET_handler (coap_context_t  *context, struct coap_resource_t *resour
 			 * ask one-shot representation to SM. The ticket field is NULL
 			 * at the moment.
 			 */
-			put_req_buf_item(buf, SM_REQ_ONESHOT, ASENSOR_TYPE_ACCELEROMETER,
+			put_req_buf_item(context->smreqbuf, SM_REQ_ONESHOT, ASENSOR_TYPE_ACCELEROMETER,
 					NULL, NULL);
 
 			//FIXME
@@ -145,7 +112,7 @@ void accel_GET_handler (coap_context_t  *context, struct coap_resource_t *resour
 	else { //There isn't an observe option
 
 		/* Ask a regular oneshot representation. */
-		put_req_buf_item(buf, SM_REQ_ONESHOT, ASENSOR_TYPE_ACCELEROMETER,
+		put_req_buf_item(context->smreqbuf, SM_REQ_ONESHOT, ASENSOR_TYPE_ACCELEROMETER,
 				NULL, NULL);
 
 		//FIXME
@@ -159,13 +126,13 @@ void accel_GET_handler (coap_context_t  *context, struct coap_resource_t *resour
 		 */
 		reg = coap_find_registration(resource, peer);
 		if (reg != NULL)
-			resource->on_unregister(buf, reg);
+			resource->on_unregister(context), reg);
 	}
 
 	return;
 }
 
-void on_unregister(ze_request_buf_t *buf, coap_registration_t *reg) {
+void accel_on_unregister(coap_context_t *ctx, coap_registration_t *reg) {
 
 	/*
 	 * Unregistration must be done through the streaming manager
@@ -177,8 +144,7 @@ void on_unregister(ze_request_buf_t *buf, coap_registration_t *reg) {
 	 * with that ticket (should not happen), it confirms the
 	 * cancellation anyways.
 	 */
-
-	put_req_buf_item(buf, SM_REQ_STOP, ASENSOR_TYPE_ACCELEROMETER,
+	put_req_buf_item(ctx->smreqbuf, SM_REQ_STOP, ASENSOR_TYPE_ACCELEROMETER,
 			reg, NULL);
 
 }

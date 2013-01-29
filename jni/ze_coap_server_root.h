@@ -1,6 +1,6 @@
 /*
- * ZeSense CoAP server
- * -- core module
+ * ZeSense CoAP Streaming Server
+ * -- root module
  *
  * Marco Zavatta
  * <marco.zavatta@telecom-bretagne.eu>
@@ -37,7 +37,6 @@
 #define LOGW(...) ((void)__android_log_print(ANDROID_LOG_WARN, "ze_coap_server", __VA_ARGS__))
 #define LOGE(...) ((void)__android_log_print(ANDROID_LOG_ERROR, "ze_coap_server", __VA_ARGS__))
 
-
 // Server endpoint coordinates
 #define SERVER_IP "192.168.43.1"	//Wifi hotspot interface
 //#define SERVER_IP "10.0.2.15" 	//Android emulator interface
@@ -45,10 +44,6 @@
 
 // Global server settings
 #define LOGPATH "/sdcard/ze_coap_server.txt"
-
-
-// mutexes/semaphores for context's -subparts-
-
 
 // Start function
 int Java_eu_tb_zesense_ZeJNIHub_ze_1coap_1server_1example_1main();

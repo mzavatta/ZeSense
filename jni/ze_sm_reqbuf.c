@@ -1,7 +1,8 @@
 /*
- * ZeSense Streaming Manager
+ * ZeSense CoAP Streaming Server
  * -- fixed length FIFO buffer (non-circular)
  * 	  for incoming requests to Streaming Manager
+ * 	  from the CoAP Server
  * 	  thread safe implementation
  *
  * Marco Zavatta
@@ -10,7 +11,7 @@
  */
 
 
-ze_sm_request_t get_req_buf_item(ze_request_buf_t *buf) {
+ze_sm_request_t get_sm_buf_item(ze_sm_request_buf_t *buf) {
 
 	/* Here I have the choice of creating a new item or just pass
 	 * it back by value.
@@ -45,7 +46,7 @@ ze_sm_request_t get_req_buf_item(ze_request_buf_t *buf) {
 }
 
 
-int put_req_buf_item(ze_request_buf_t *buf, int rtype, int sensor, /* coap_address_t dest,*/
+int put_sm_buf_item(ze_sm_request_buf_t *buf, int rtype, int sensor, /* coap_address_t dest,*/
 		coap_registration_t *reg, int freq /*int tknlen, unsigned char *tkn*/) {
 
 	pthread_mutex_lock(buf->mtx);
@@ -68,9 +69,12 @@ int put_req_buf_item(ze_request_buf_t *buf, int rtype, int sensor, /* coap_addre
 	return 0;
 }
 
-void init_req_buf(ze_request_buf_t *buf) {
+void init_sm_buf(ze_sm_request_buf_t *buf) {
 
-	memset(buf->rbuf, 0, SM_RBUF_SIZE*(ze_sm_request_t));
+	buf = malloc(sizeof(ze_sm_request_buf_t));
+	if (buf == NULL) return;
+
+	memset(buf->rbuf, 0, SM_RBUF_SIZE*sizeof(ze_sm_request_t));
 
 	/* What happens if a thread tries to initialize a mutex or a cond var
 	 * that has already been initialized? "POSIX explicitly
@@ -92,9 +96,7 @@ void init_req_buf(ze_request_buf_t *buf) {
 	 */
 
 	/* Reset indexes */
-	/*
 	buf->gethere = 0;
 	buf->puthere = 0;
 	buf->counter = 0;
-	*/
 }

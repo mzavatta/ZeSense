@@ -1,6 +1,6 @@
 /*
- * ZeSense CoAP server
- * -- core module
+ * ZeSense CoAP Streaming Server
+ * -- root module
  *
  * Marco Zavatta
  * <marco.zavatta@telecom-bretagne.eu>
@@ -31,17 +31,23 @@ int Java_eu_tb_zesense_ZeJNIHub_ze_1coap_1server_1root() {
 	 * reference counting */
 	coap_context_t  *cctx;
 	cctx = get_context(SERVER_IP, SERVER_PORT);
-	if (!context)
+	if (!cctx)
 		return -1;
 
 	stream_context_t *smctx;
 	smctx = get_streaming_manager(cctx);
+	if (!smctx)
+		return -1;
 
-	ze_request_buf_t smreqbuf;
-	init_req_buf(&smreqbuf);
+	ze_sm_request_buf_t *smreqbuf;
+	init_sm_req_buf(smreqbuf);
+	if (!smreqbuf)
+		return -1;
 
-	//Instance of notifications buf
-	//Init
+	ze_coap_request_buf_t *notbuf;
+	init_coap_req_buf(notbuf);
+	if (!notbuf)
+		return -1;
 
     // Open log file
 	char *logpath = LOGPATH;

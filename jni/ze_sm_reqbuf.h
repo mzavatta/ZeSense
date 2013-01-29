@@ -1,7 +1,8 @@
 /*
- * ZeSense Streaming Manager
+ * ZeSense CoAP Streaming Server
  * -- fixed length FIFO buffer (non-circular)
  * 	  for incoming requests to Streaming Manager
+ * 	  from the CoAP Server
  * 	  thread safe implementation
  *
  * Marco Zavatta
@@ -12,7 +13,10 @@
 /* Buffer size */
 #define SM_RBUF_SIZE		20
 
-typedef struct ze_request_buf_t {
+struct ze_sm_request_buf_t;
+struct ze_sm_request_t;
+
+typedef struct ze_sm_request_buf_t {
 
 	ze_sm_request_t rbuf[SM_RBUF_SIZE];
 
@@ -26,7 +30,7 @@ typedef struct ze_request_buf_t {
 	pthread_mutex_t mtx;
 	pthread_cond_t notfull;
 	//pthread_cond_t notempty;
-};
+} ze_sm_request_buf_t;
 
 typedef struct ze_sm_request_t {
 	/* Request type */
@@ -47,11 +51,7 @@ typedef struct ze_sm_request_t {
 	int tknlen;
 	unsigned char *tkn; //remember to allocate a new one!
 	*/
-};
-/*
-typedef struct ze_ticket_t {
-	coap_registration_t *reg;
-};*/
+} ze_sm_request_t;
 
 /**
  * To fit our purposes:
@@ -67,7 +67,7 @@ typedef struct ze_ticket_t {
  *
  * @return The oldest item in the buffer, NULL if buffer empty
  */
-ze_sm_request_t get_req_buf_item(ze_request_buf_t *buf);
+ze_sm_request_t get_sm_buf_item(ze_sm_request_buf_t *buf);
 
 /*
  * To fit our purposes:
@@ -86,7 +86,7 @@ ze_sm_request_t get_req_buf_item(ze_request_buf_t *buf);
  *
  * @return Zero on success
  */
-int put_req_buf_item(ze_request_buf_t *buf, int rtype, int sensor, /*coap_address_t dest,*/
+int put_sm_buf_item(ze_sm_request_buf_t *buf, int rtype, int sensor, /*coap_address_t dest,*/
 		coap_registration_t *reg, int freq/*, int tknlen, unsigned char *tkn*/);
 
-void init_req_buf(ze_request_buf_t *buf);
+void init_sm_buf(ze_sm_request_buf_t *buf);

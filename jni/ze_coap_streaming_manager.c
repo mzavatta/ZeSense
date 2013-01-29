@@ -267,7 +267,7 @@ stream_context_t *get_streaming_manager(coap_context_t  *cctx) {
 	return temp;
 }
 
-void ze_coap_streaming_thread(stream_context_t *mngr, ze_request_buf_t *smreqbuf,
+void ze_coap_streaming_thread(stream_context_t *mngr, ze_sm_request_buf_t *smreqbuf,
 		ze_sample_cache_t *cache, notbuf) {
 
 	// Hello and current time and date
@@ -470,7 +470,7 @@ void ze_coap_streaming_thread(stream_context_t *mngr, ze_request_buf_t *smreqbuf
 		/* sleep for a while, not much actually */
 		struct timespec rqtp;
 		sleep.tv_sec = 0;
-		sleep.tv_nsec = 1000000; //1msec
+		sleep.tv_nsec = 5000000; //1msec
 		nanosleep(rqtp, NULL);
 
 	} /*thread loop end*/

@@ -1,8 +1,9 @@
 /*
- * ZeSense CoAP server
+ * ZeSense CoAP Streaming Server
  * -- fixed length FIFO buffer (non-circular)
  * 	  for incoming requests to the CoAP server
- * 	  from the Sensor Manager
+ * 	  from the Streaming Manager
+ * 	  thread-safe implementation
  *
  * Marco Zavatta
  * <marco.zavatta@telecom-bretagne.eu>
@@ -10,7 +11,9 @@
  */
 
 
-ze_coap_request_t get_req_buf_item(ze_coap_request_buf_t *buf) {
+ze_coap_request_t get_coap_buf_item(ze_coap_request_buf_t *buf) {
+
+	ze_coap_request_t temp;
 
 	pthread_mutex_lock(buf->mtx);
 		if (buf->counter <= 0) { //empty (shall never < 0 anyway)
@@ -18,11 +21,13 @@ ze_coap_request_t get_req_buf_item(ze_coap_request_buf_t *buf) {
 			 * pthread_cond_wait(buf->notempty, buf->mtx);
 			 * do nothing, we must not block!
 			 */
-			return NULL;
+			/* Signal that the buffer is empty by returning
+			 * an invalid request */
+			temp.rtype = COAP_SMREQ_INVALID;
 		}
 		else {
-			ze_coap_request_t temp = buf->rbuf[buf->gethere];
-			temp.reg = coap_registration_checkout(temp.reg);
+			temp = buf->rbuf[buf->gethere];
+			//temp.reg = coap_registration_checkout(temp.reg);
 			buf->gethere = ((buf->gethere)+1) % COAP_RBUF_SIZE;
 			counter--;
 			pthread_cond_signal(buf->notfull); //surely no longer full
@@ -32,7 +37,7 @@ ze_coap_request_t get_req_buf_item(ze_coap_request_buf_t *buf) {
 	return temp;
 }
 
-int put_req_buf_item(ze_coap_request_buf_t *buf, int rtype, /*str uri, coap_address_t dest,*/
+int put_coap_buf_item(ze_coap_request_buf_t *buf, int rtype, /*str uri, coap_address_t dest,*/
 		coap_ticket_t reg, int conf/*, int tknlen, unsigned char *tkn*/, ze_payload_t *pyl) {
 
 	pthread_mutex_lock(buf->mtx);
@@ -59,9 +64,12 @@ int put_req_buf_item(ze_coap_request_buf_t *buf, int rtype, /*str uri, coap_addr
 	return 0;
 }
 
-void init_req_buf(ze_coap_request_buf_t *buf) {
+void init_coap_buf(ze_coap_request_buf_t *buf) {
 
-	memset(buf->rbuf, 0, COAP_RBUF_SIZE*(ze_coap_request_t));
+	buf = malloc(sizeof(ze_coap_request_buf_t));
+	if (buf == NULL) return;
+
+	memset(buf->rbuf, 0, COAP_RBUF_SIZE*sizeof(ze_coap_request_t));
 
 	/* What happens if a thread tries to initialize a mutex or a cond var
 	 * that has already been initialized? "POSIX explicitly
@@ -83,9 +91,7 @@ void init_req_buf(ze_coap_request_buf_t *buf) {
 	 */
 
 	/* Reset pointers */
-	/*
 	buf->gethere = 0;
 	buf->puthere = 0;
 	buf->counter = 0;
-	*/
 }
