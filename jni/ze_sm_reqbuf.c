@@ -46,19 +46,19 @@ ze_sm_request_t get_sm_buf_item(ze_sm_request_buf_t *buf) {
 }
 
 
-int put_sm_buf_item(ze_sm_request_buf_t *buf, int rtype, int sensor, /* coap_address_t dest,*/
-		coap_registration_t *reg, int freq /*int tknlen, unsigned char *tkn*/) {
+int put_sm_buf_item(ze_sm_request_buf_t *buf, int rtype, int sensor,
+		coap_ticket_t reg, int freq) {
 
 	pthread_mutex_lock(buf->mtx);
 		if (buf->counter >= SM_RBUF_SIZE) { //full (greater shall not happen)
 			pthread_cond_wait(buf->notfull, buf->mtx);
 		}
 
-		// Copy contents
+		/* -copy- contents. */
 		buf->rbuf[buf->puthere].rtype = rtype;
 		buf->rbuf[buf->puthere].sensor = sensor;
 		/* Pass the ticket along. */
-		buf->rbuf[buf->puthere].reg = reg;
+		buf->rbuf[buf->puthere].ticket = reg;
 		buf->rbuf[buf->puthere].freq = freq;
 
 		buf->puthere = ((buf->puthere)+1) % SM_RBUF_SIZE;

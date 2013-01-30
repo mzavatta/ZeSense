@@ -47,6 +47,96 @@
 #define TRUE 	0
 #define FALSE 	1
 
+typedef union coap_ticket_u coap_ticket_t;
+union coap_ticket_u {
+	/* Ticket corresponding to the underlying registration.*/
+	coap_registration_t *reg;
+
+	/* Ticket corresponding to the underlying asynchronous request. */
+	coap_tid_t tid;
+};
+
+struct stream_context_t;
+
+/**
+ * Streaming Manager's global context
+ * Array indexes mirror Android-defined sensor types
+ */
+typedef struct stream_context_t {
+	/* Sensors sources available for streaming */
+	ze_sensor_t sensors[ZE_NUMSENSORS];
+
+	/* The server we're sending the streams through.
+	 * Don't think we need it.. we need the two buffers,
+	 * yes, but function parameters are designed to
+	 * take them directly (unlike libcoap functions
+	 * that came without the knowledge of the buffers
+	 * and the Streaming Manager thus taking
+	 * only coap_context_t as parameter..) */
+	//coap_context_t *server;
+
+	/* Android sensor infrastructure */
+	ASensorManager* sensorManager;
+	ASensorEventQueue* sensorEventQueue;
+	ALooper* looper;
+} stream_context_t;
+
+typedef struct ze_sensor_t {
+	/* Association sensor-resource */
+	int sensor; //Useless if we use an array whose index is mirrored to sensor types
+	//str uri;
+
+	/* XXX: does const make sense? */
+	ASensor* android_handle;
+
+	/* Quick access to last known sensor value */
+	ASensorEvent event_cache;
+
+	/* List of streams registered on this sensor */
+	//ze_single_stream_t *streams = NULL;
+	ze_stream_t *streams;
+
+	/* List of one-shot requests registered on this sensor */
+	ze_oneshot_t *oneshots;
+
+	/* Local status variables */
+	int freq;
+	int last_wts;
+	int last_rtpts;
+} ze_sensor_t;
+
+typedef struct ze_stream_t {
+	ze_stream_t *next;
+
+	/* Ticket that identifies the stream
+	 * when interacting with the CoAP server.
+	 */
+	coap_ticket_t reg;
+
+	/* In some way this is the lookup key,
+	 * no two elements with the same dest will be present in the list
+	 * as mandated by draft-coap-observe-7
+	 * not anymore, it's managed differently now
+	 */
+	//coap_address_t dest;
+
+	/* Client specified frequency */
+	int freq;
+
+	/* Streaming Manager local status variables. */
+	int last_wts;	//Last wallclock timestamp
+	int last_rtpts;	//Last RTP timestamp
+	int freq_div;	//Frequency divider
+} ze_stream_t;
+
+typedef struct ze_oneshot_t {
+	ze_oneshot_t *next;
+
+	/* Ticket that identifies the oneshot request
+	 * when interacting with the CoAP server.
+	 */
+	coap_ticket_t one;
+} ze_oneshot_t;
 
 inline int CHECK_OUT_RANGE(int sensor) {
 if (sensor<0 || sensor>=ZE_NUMSENSORS) {
@@ -176,88 +266,4 @@ int sm_new_oneshot(stream_context_t *mngr, int sensor_id, coap_address_t dest,
 		int tokenlen, unsigned char *token);
 
 
-stream_context_t *get_streaming_manager(coap_context_t  *cctx);
-
-
-/**
- * Streaming Manager's global context
- * Array indexes mirror Android-defined sensor types
- */
-typedef struct stream_context_t {
-	/* Sensors sources available for streaming */
-	ze_sensor_t sensors[ZE_NUMSENSORS];
-
-	/* The server we're sending the streams through */
-	coap_context_t *server;
-
-	/* Android sensor infrastructure */
-	ASensorManager* sensorManager;
-	ASensorEventQueue* sensorEventQueue;
-	ALooper* looper;
-};
-
-typedef struct ze_sensor_t {
-	/* Association sensor-resource */
-	int sensor; //Useless if we use an array whose index is mirrored to sensor types
-	//str uri;
-
-	/* XXX: does const make sense? */
-	ASensor* android_handle;
-
-	/* Quick access to last known sensor value */
-	ASensorEvent event_cache;
-
-	/* List of streams registered on this sensor */
-	//ze_single_stream_t *streams = NULL;
-	ze_single_stream_t *streams;
-
-	/* List of one-shot requests registered on this sensor */
-	ze_oneshot_t *oneshots;
-
-	/* Local status variables */
-	int freq;
-	int last_wts;
-	int last_rtpts;
-};
-
-typedef struct ze_stream_t {
-	ze_stream_t *next;
-
-	/* Ticket that identifies the stream
-	 * when interacting with the CoAP server.
-	 */
-	coap_ticket_t reg;
-
-	/* In some way this is the lookup key,
-	 * no two elements with the same dest will be present in the list
-	 * as mandated by draft-coap-observe-7
-	 * not anymore, it's managed differently now
-	 */
-	//coap_address_t dest;
-
-	/* Client specified frequency */
-	int freq;
-
-	/* Streaming Manager local status variables */
-	int last_wts;	//Last wallclock timestamp
-	int last_rtpts;	//Last RTP timestamp
-	int freq_div;	//Frequency divider
-};
-
-typedef struct ze_oneshot_t {
-	ze_single_stream_t *next;
-
-	/* Ticket that identifies the request
-	 * when interacting with the CoAP server.
-	 */
-	coap_ticket_t one;
-
-	/* Lookup key is destination & token */
-	/*
-	coap_address_t dest;
-	int tknlen;
-	unsigned char *tkn;
-	*/
-};
-
-
+stream_context_t *get_streaming_manager(/*coap_context_t  *cctx*/);

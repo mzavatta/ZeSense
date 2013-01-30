@@ -7,22 +7,17 @@
  * <marco.zavatta@mail.polimi.it>
  */
 
-int sm_bind_source(stream_context_t *mngr, int sensor_id, str uri) {
 
-	CHECK_OUT_RANGE(sensor_id);
-
-	mngr->sensor[sensor_id].uri = uri;
-	return 0;
-}
-
-ze_stream_t *sm_start_stream(stream_context_t *mngr, int sensor_id, coap_ticket_t reg, int freq) {
+ze_stream_t *sm_start_stream(stream_context_t *mngr, int sensor_id,
+		coap_ticket_t reg, int freq) {
 
 	CHECK_OUT_RANGE(sensor_id);
 
 	ze_stream_t *sub, *newstream;
 
 	newstream = sm_new_stream(reg, freq);
-	/* TODO assign proper values to:
+	if (newstream == NULL) return NULL;
+	/* TODO assign proper values to newstream:
 	 * last_wts
 	 * randomize rtpts since its first assignment
 	 * frequency divider to be considered based on the current sampling frequency
@@ -38,40 +33,51 @@ ze_stream_t *sm_start_stream(stream_context_t *mngr, int sensor_id, coap_ticket_
 
 		android_sensor_activate(mngr, sensor_id, freq);
 	}
-
 	/* Sensor is already active.
 	 * Re-evaluate its frequency based on the new request
 	 */
-	if (freq > mngr->sensors[sensor_id].freq) {
+	else if (freq > mngr->sensors[sensor_id].freq) {
 		mngr->sensors[sensor_id].freq = freq;
 		android_sensor_changef(mngr, sensor_id, freq);
 	}
 
-	/* Replace if there is the same stream already
-	 * if not just insert
+	/* Replace if there is a stream with the same ticket
+	 * otherwise just append..
 	 */
 	sub = sm_find_stream(mngr, sensor_id, reg);
 	if (sub != NULL) {
+		/* TODO
+		 * Do I have to transfer anything to newstream before
+		 * sub gets deleted? Maybe some local status variables.
+		 * We'll see when we implement the timestamping..
+		 */
 		LL_DELETE(mngr->sensors[sensor_id].streams, sub);
 		free(sub);
+		LL_APPEND(mngr->sensors[sensor_id].streams, newstream);
+		return NULL; /* So that the caller can know that we've not added
+		 	 	 	   * a brand new stream. */
 	}
 	LL_APPEND(mngr->sensors[sensor_id].streams, newstream);
 
 	return newstream;
 }
 
-/* best would be to call the stuff with as parameter coap_asynch_checkout(res) */
 int sm_stop_stream(stream_context_t *mngr, int sensor_id, coap_ticket_t reg) {
 
 	CHECK_OUT_RANGE(sensor_id);
 
-	ze_stream_t *del;
-	ze_stream_t *temp;
+	ze_stream_t *del, *temp;
 
 	del = sm_find_stream(mngr, sensor_id, reg);
 
 	if (del == NULL) {
-		/* stream not found.. its very strange but anyway */
+		/* Stream not found.. its very strange but anyway.
+		 * Important to return this value, it is checked by the caller.
+		 * Indeed if the Streaming Manager does not find any stream
+		 * with that ticket number, it should not send a COAP_STREAM_STOPPED
+		 * because the CoAP server does not issue a new ticket
+		 * when asking for SM_REQ_STOP.
+		 */
 		LOGW("inconsistent state in streaming manager, asked to stop"
 				"stream but no streams are active");
 		return SM_ERROR;
@@ -82,10 +88,12 @@ int sm_stop_stream(stream_context_t *mngr, int sensor_id, coap_ticket_t reg) {
 	free(del);
 	del = NULL;
 
-	/* turn off the sensor if it was the last one,
-	 * otherwise reconsider the output frequency of the sensor
-	 * if we've taken out the highest one */
-	if (mngr->sensors[sensor_id].streams == NULL) {
+	/* Turn off the sensor if it was the last one and there is no
+	 * oneshot request to be served, otherwise reconsider
+	 * the output frequency of the sensor, as we might
+	 * have taken out the fastest demanding one. */
+	if (mngr->sensors[sensor_id].streams == NULL &&
+			mngr->sensors[sensor_id].oneshots == NULL) {
 		android_sensor_turnoff(mngr, sensor_id);
 		mngr->sensors[sensor_id].freq = 0;
 	}
@@ -93,7 +101,7 @@ int sm_stop_stream(stream_context_t *mngr, int sensor_id, coap_ticket_t reg) {
 		/* reconsider the maximum frequency, maybe we just stopped
 		 * the stream with the highest one.
 		 * just take the maximum of those left
-		 * (TODO: it's not optimized, first of all the deleted stream
+		 * (TODO: it's not optimal, first of all the deleted stream
 		 * might not have been the maximum, and also the maximum
 		 * of those left might been equal to the previous one)
 		 */
@@ -136,7 +144,7 @@ ze_stream_t *sm_find_stream(stream_context_t *mngr, int sensor_id, coap_ticket_t
 
 ze_stream_t *sm_new_stream(coap_ticket_t reg, int freq) {
 
-	ze_stream_t new;
+	ze_stream_t *new;
 	new = (ze_stream_t *) malloc(sizeof(ze_stream_t));
 	if (new == NULL) {
 		LOGW("new stream malloc failed");
@@ -236,17 +244,7 @@ int android_sensor_turnoff(stream_context_t *mngr, int sensor) {
 }
 
 
-
-
-int sm_del_oneshot(stream_context_t *mngr, int sensor_id, coap_address_t dest,
-		int tknlen, unsigned char *tkn) {
-
-
-
-}
-
-
-stream_context_t *get_streaming_manager(coap_context_t  *cctx) {
+stream_context_t *get_streaming_manager(/*coap_context_t  *cctx*/) {
 
 	stream_context_t *temp;
 
@@ -258,7 +256,7 @@ stream_context_t *get_streaming_manager(coap_context_t  *cctx) {
 
 	memset(temp, 0, sizeof(stream_context_t));
 
-	temp->server = cctx;
+	//temp->server = cctx;
 
 	temp->sensorManager = NULL;
 	temp->sensorEventQueue = NULL;
@@ -268,7 +266,7 @@ stream_context_t *get_streaming_manager(coap_context_t  *cctx) {
 }
 
 void ze_coap_streaming_thread(stream_context_t *mngr, ze_sm_request_buf_t *smreqbuf,
-		ze_sample_cache_t *cache, notbuf) {
+				ze_coap_request_buf_t *notbuf) {
 
 	// Hello and current time and date
 	LOGI("Hello from Streaming Manager Thread");
@@ -287,9 +285,6 @@ void ze_coap_streaming_thread(stream_context_t *mngr, ze_sm_request_buf_t *smreq
     mngr->sensorEventQueue =
     		ASensorManager_createEventQueue(sensorManager, looper, 45, NULL, NULL);
     LOGI("got sensorEventQueue");
-
-
-
 
 	ASensorEvent event;
 
@@ -310,27 +305,31 @@ void ze_coap_streaming_thread(stream_context_t *mngr, ze_sm_request_buf_t *smreq
 
 	while(1) { /*thread loop start*/
 
-		/* Fetch one request from the buffer, if any
+		/*-------------------------Serve request queue---------------------------------*/
+
+		/* Fetch one request from the buffer, if any.
 		 * get_rq_buf_item does not block */
-		sm_req = get_req_buf_item(smreqbuf);
+		sm_req = get_sm_buf_item(smreqbuf);
 
 		if (sm_req.rtype == SM_REQ_START) {
-			/* If it returns null, send confirm cancellation message */
-			if ( sm_start_stream(mngr, sm_req.sensor, sm_req.reg, sm_req.freq) )
-				put_req_buf_item(notbuf, COAP_STREAM_STOPPED, sm_req.reg,
+			/* We have to send a COAP_STREAM_STOPPED message even when
+			 * we are replacing an already existing stream, not only when
+			 * we're not able to start one.
+			 * Ok let's make it return NULL in both cases.. */
+			if ( sm_start_stream(mngr, sm_req.sensor, sm_req.reg, sm_req.freq) == NULL)
+				put_coap_buf_item(notbuf, COAP_STREAM_STOPPED, sm_req.reg,
 						NULL, NULL);
 		}
 		else if (sm_req.rtype == SM_REQ_STOP) {
-			/* Note that stop_stream frees the memory of the stream it deletes. */
-			sm_stop_stream(mngr, sm_req.sensor, sm_req.reg);
-			/*
-			 * Note that we confirm the cancellation of this ticket
-			 * even if in SM's register there's no such stream.
-			 * This is needed because an issued ticket implies a fixed
-			 * memory chuck allocated by the server's thread.
-			 */
-			put_req_buf_item(notbuf, COAP_STREAM_STOPPED, sm_req.reg,
-									NULL, NULL);
+			/* Note that sm_stop_stream frees the memory of the stream it deletes. */
+			if ( sm_stop_stream(mngr, sm_req.sensor, sm_req.reg) != SM_ERROR )
+				put_coap_buf_item(notbuf, COAP_STREAM_STOPPED, sm_req.reg,
+						NULL, NULL);
+				/*
+				 * Note that we do not COAP_STREAM_STOPPED if no stram with
+				 * that ticket number has been found. This is because the
+				 * CoAP server does not issue another ticket on COAP_REQ_STOP
+				 */
 		}
 		else if (sm_req.rtype == SM_REQ_ONESHOT) {
 
@@ -356,7 +355,7 @@ void ze_coap_streaming_thread(stream_context_t *mngr, ze_sm_request_buf_t *smreq
 				 * attaching the payload. Do not free pyl because not it
 				 * is needed by the notbuf.
 				 */
-				put_req_buf_item(notbuf, COAP_SEND_ASYNCH, sm_req.reg,
+				put_coap_buf_item(notbuf, COAP_SEND_ASYNCH, sm_req.reg,
 						COAP_MESSAGE_NON, pyl);
 			}
 			else {
@@ -378,9 +377,12 @@ void ze_coap_streaming_thread(stream_context_t *mngr, ze_sm_request_buf_t *smreq
 		osreq = NULL;
 		stream = NULL;
 
+
+		/*-------------------------Send some samples-----------------------------------*/
+
 		while (queuecount < QUEUE_REQ_RATIO) {
 
-		/* is this blocking? doesn't seem like.. and that's good */
+		/* Is this blocking? doesn't seem like.. and that's good. */
 		if (ASensorEventQueue_getEvents(sensorEventQueue, &event, 1) > 0) {
 
 			if (event.type == ASENSOR_TYPE_ACCELEROMETER) {
@@ -415,18 +417,21 @@ void ze_coap_streaming_thread(stream_context_t *mngr, ze_sm_request_buf_t *smreq
 					/* Take first element. */
 					osreq = mngr->sensors[event.type].oneshots;
 					/* Use its ticket to send the sample */
-					put_req_buf_item(notbuf, COAP_SEND_ASYNCH,
+					put_coap_buf_item(notbuf, COAP_SEND_ASYNCH,
 							osreq->one, COAP_MESSAGE_NON, pyl);
 					/* Let the head point to the next element before freeing the former. */
-					mngr->sensors[event.type].oneshots = tempy->next;
+					mngr->sensors[event.type].oneshots = osreq->next;
 					free(osreq);
 					}
+
+				/* Do not free pyl because not it
+				 * is needed by the notbuf.
+				 */
 			}
 
 			/* Done with the oneshots,
 			 * now this sample might also belong to some stream
 			 */
-
 			if (mngr->sensors[event.type].streams != NULL) {
 
 				/* Form payload, though it will change for every stream. */
@@ -441,10 +446,11 @@ void ze_coap_streaming_thread(stream_context_t *mngr, ze_sm_request_buf_t *smreq
 				pyl->wts = event.timestamp;
 				//pyl->rtpts = 4567; //TODO
 
-				/* TODO: for the moment notify all the streams regardless of frequency */
+				/* TODO: for the moment notify all the streams regardless of frequency.
+				 * wait but like this*/
 				stream = mngr->sensors[event.type].streams;
 				while (stream != NULL) {
-					put_req_buf_item(notbuf, COAP_SEND_NOT,
+					put_coap_buf_item(notbuf, COAP_SEND_NOT,
 							stream->reg, COAP_MESSAGE_NON, pyl);
 					/*
 					 * we'll likely need to do some operations here,
@@ -453,6 +459,10 @@ void ze_coap_streaming_thread(stream_context_t *mngr, ze_sm_request_buf_t *smreq
 					 */
 					stream = stream->next;
 				}
+
+				/* Do not free pyl because not it
+				 * is needed by the notbuf.
+				 */
 			}
 			else {
 				/* we have cleared all the oneshots
@@ -467,7 +477,8 @@ void ze_coap_streaming_thread(stream_context_t *mngr, ze_sm_request_buf_t *smreq
 
 		queuecount = 0;
 
-		/* sleep for a while, not much actually */
+		/*----------------------Sleep for a while, not much actually-------------------*/
+
 		struct timespec rqtp;
 		sleep.tv_sec = 0;
 		sleep.tv_nsec = 5000000; //1msec

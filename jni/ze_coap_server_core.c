@@ -19,7 +19,8 @@ ze_coap_server_core_thread(coap_context_t *cctx, ze_coap_request_buf_t *notbuf) 
 	ze_coap_request_t req;
 	coap_address_t dest;
 	coap_pdu_t *pdu = NULL;
-	coap_async_state_t *asy = NULL, *asyt = NULL;
+	coap_async_state_t *asy = NULL, *tmp;
+	coap_tid_t asyt;
 	coap_resource_t *res;
 	coap_subscription_t *sub = NULL, *subt = NULL;
 
@@ -105,46 +106,50 @@ ze_coap_server_core_thread(coap_context_t *cctx, ze_coap_request_buf_t *notbuf) 
 		 * manager. If there is no ongoing transaction, the registration
 		 * associated to it will be destroyed.
 		 */
-		coap_registration_release(req.reg);
+		coap_registration_release(req.ticket.reg);
 	}
 	else if (req.rtype == COAP_SEND_ASYNCH) {
 
-		/*
-		//lookup request in the asynch register. It must be there.
-		asy = cctx->async_state;
-		asyt = cctx->async_state;
-		while (asy != NULL) {
-			if ( coap_address_equals(req.dest, asy->peer) == 1
-					&&	(*(req.tkn) == *(asy->token)) ) break;
-			asyt = asy;
-			asy = asy->next;
-		}
-		if (asy == NULL) {
-			LOGW("problem, asynch request not found");
-		}
-		else { //found it
-			//Send response
+		/* Lookup in the async register using the ticket tid..
+		 * it shall find it..
+		 */
+		asy = coap_find_async(cctx, req.ticket.tid);
+		if (asy != NULL) {
+
+			/* Build payload. */
+			pyllength = sizeof(int64_t)+sizeof(int)+(req.pyl->length);
+			pyl = malloc(pyllegth);
+			if (pyl == NULL) {
+				LOGW("cannot malloc for payload in server core thread");
+				exit(1);
+			}
+			memcpy(pyl, &(reg.pyl->wts), sizeof(int64_t));
+			memcpy(pyl+sizeof(int64_t), &(req.pyl->length), sizeof(int));
+			memcpy(pyl+sizeof(int64_t)+sizeof(int), req.pyl->data, req.pyl->length);
+
+			/* Need to add options in order... */
 			pdu = coap_pdu_init(req.conf, COAP_RESPONSE_205,
-				      asy->message_id non credo vada bene, req.pyl->length);
-			coap_add_option(pdu, COAP_OPTION_TOKEN, req.tknlen, req.tkn);
-			coap_add_data(pdu,
-					((req.pyl->length)+sizeof(int64_t)+sizeof(int)+sizeof(int)),
-					req.pyl);
+					coap_new_message_id(cctx), COAP_MAX_PDU_SIZE);
+			coap_add_option(pdu, COAP_OPTION_TOKEN, asy->tokenlen, asy->token);
+			coap_add_data(pdu, pyllength, pyl);
 
-			if (req.conf == COAP_MESSAGE_CON) { //confirmable
-				coap_send_confirmed(cctx, req.dest, pdu);
+			/* Send message. */
+			if (req.conf == COAP_MESSAGE_CON) {
+				coap_send_confirmed(cctx, asy->peer, pdu);
 			}
-			else { //non confirmable
-				coap_send(cctx, req.dest, pdu);
+			else if (req.conf == COAP_MESSAGE_NON) {
+				coap_send(cctx, asy->peer, pdu);
 			}
+			else LOGW("could not understand message type");
 
-			//clear PDU for next loop
-			coap_pdu_clear(pdu, max size??);
+			coap_pdu_clear(pdu, COAP_MAX_PDU_SIZE);
+			free(pyl);
 
-			//remove asynch transaction
-			asyt->next = asy->next;
-			coap_free_async(asy);
-			*/
+			/* Asynchronous request satisfied, regardless of whether
+			 * a CON and an ACK will arrive, remove it. */
+			coap_remove_async(cctx, asy->id, &tmp);
+		}
+		else LOGW("Got oneshot sample but no asynch request matches the ticket");
 
 	}
 	else if (req.rtype == COAP_SEND_NOTIF) {
@@ -170,29 +175,27 @@ ze_coap_server_core_thread(coap_context_t *cctx, ze_coap_request_buf_t *notbuf) 
 		pdu = coap_pdu_init(req.conf, COAP_RESPONSE_205,
 				coap_new_message_id(cctx), COAP_MAX_PDU_SIZE);
 		coap_add_option(pdu, COAP_OPTION_SUBSCRIPTION, sizeof(short), cctx->observe);
-		coap_add_option(pdu, COAP_OPTION_TOKEN, req.reg->token_length, req.reg->token);
+		coap_add_option(pdu, COAP_OPTION_TOKEN, req.ticket.reg->token_length, req.ticket.reg->token);
 		coap_add_data(pdu, pyllength, pyl);
 
-		if (req.reg->non_cnt >= COAP_OBS_MAX_NON || req.conf == COAP_MESSAGE_CON) {
+		if (req.ticket.reg->non_cnt >= COAP_OBS_MAX_NON || req.conf == COAP_MESSAGE_CON) {
 			/* Either the max NON have been reached or
 			 * we explicitly requested a CON.
 			 * Send a CON and clean the NON counter
 			 */
-			/* TODO: rework this function, the registration reference must be
-			 * registered in the transaction record. In other words, we need to pass
-			 * coap_registration_checkout(coap_registration_t *r);
-			 */
-			coap_notify(cctx, req.reg->subscriber, pdu, req.reg);
-			req.reg->non_cnt = 0;
+			coap_notify_confirmed(cctx, req.ticket.reg->subscriber, pdu,
+					coap_registration_checkout(req.ticket.reg) );
+			req.ticket.reg->non_cnt = 0;
 		}
-		else {
+		else if (req.conf == COAP_MESSAGE_NON) {
 			/* send a non-confirmable
 			 * and increase the NON counter
 			 * no need to keep the transaction state
 			 */
-			coap_send(cctx, req.reg->subscriber, pdu);
-			req.reg->non_cnt++;
+			coap_send(cctx, req.ticket.reg->subscriber, pdu);
+			req.ticket.reg->non_cnt++;
 		}
+		else LOGW("Could not understand message type.");
 
 		coap_pdu_clear(pdu, COAP_MAX_PDU_SIZE);
 		/* Even if pyl is a pointer to char, it does not
@@ -232,19 +235,7 @@ ze_coap_server_core_thread(coap_context_t *cctx, ze_coap_request_buf_t *notbuf) 
 
 	} /*-----------------------------------------------------------------*/
 }
-/*
-asynch_equals(coap_async_state_t *one, coap_async_state_t *two) {
-	coap_address_equals(one->peer, const coap_address_t *b) 1 if equal
-	if (one->peer == two->peer
-			&&
-			one->token == two->token)
-		return 0;
-}*/
 
-
-
-
-/* TOKEN COMPARISON, MIGHT BE USEFUL!
+/* token comparison
 && (!token || (token->length == s->token_length
-	       && memcmp(token->s, s->token, token->length) == 0))
-	       */
+	       && memcmp(token->s, s->token, token->length) == 0)) */

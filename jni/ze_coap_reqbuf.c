@@ -37,8 +37,8 @@ ze_coap_request_t get_coap_buf_item(ze_coap_request_buf_t *buf) {
 	return temp;
 }
 
-int put_coap_buf_item(ze_coap_request_buf_t *buf, int rtype, /*str uri, coap_address_t dest,*/
-		coap_ticket_t reg, int conf/*, int tknlen, unsigned char *tkn*/, ze_payload_t *pyl) {
+int put_coap_buf_item(ze_coap_request_buf_t *buf, int rtype,
+		coap_ticket_t reg, int conf, ze_payload_t *pyl) {
 
 	pthread_mutex_lock(buf->mtx);
 		if (buf->counter >= COAP_RBUF_SIZE) { //full (greater shall not happen)

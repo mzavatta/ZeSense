@@ -43,10 +43,8 @@ typedef struct ze_coap_request_t {
 	/* Request type */
 	int rtype;
 
-	//TODO: could use a union
-
 	/* Ticket corresponding to the underlying registration */
-	coap_registration_t *reg;
+	coap_ticket_t ticket;
 
 	/* CON or NON */
 	int conf;
@@ -99,7 +97,9 @@ ze_coap_request_t get_coap_buf_item(ze_coap_request_buf_t *buf);
  *
  * @return Zero on success
  */
-int put_coap_buf_item(ze_coap_request_buf_t *buf, int rtype, /*str uri, coap_address_t dest,*/
-		coap_ticket_t reg, int conf/*, int tknlen, unsigned char *tkn*/, ze_payload_t *pyl);
+int put_coap_buf_item(ze_coap_request_buf_t *buf, int rtype,
+		coap_ticket_t reg, int conf, ze_payload_t *pyl);
+
 
 void init_coap_buf(ze_coap_request_buf_t *buf);
+

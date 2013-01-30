@@ -14,6 +14,18 @@
 #include 'ze_coap_server_core.h'
 #include 'ze_coap_resources.h'
 
+struct sm_thread_args {
+	stream_context_t *smctx;
+	ze_sm_request_buf_t *smreqbuf;
+	ze_coap_request_buf_t *notbuf;
+};
+
+struct coap_thread_args {
+	coap_context_t  *cctx;
+	ze_sm_request_buf_t *smreqbuf;
+	ze_coap_request_buf_t *notbuf;
+};
+
 
 int Java_eu_tb_zesense_ZeJNIHub_ze_1coap_1server_1root() {
 
@@ -35,7 +47,7 @@ int Java_eu_tb_zesense_ZeJNIHub_ze_1coap_1server_1root() {
 		return -1;
 
 	stream_context_t *smctx;
-	smctx = get_streaming_manager(cctx);
+	smctx = get_streaming_manager(/*may want to parametrize*/);
 	if (!smctx)
 		return -1;
 
@@ -49,7 +61,7 @@ int Java_eu_tb_zesense_ZeJNIHub_ze_1coap_1server_1root() {
 	if (!notbuf)
 		return -1;
 
-    // Open log file
+    /* Open log file. */
 	char *logpath = LOGPATH;
 	logfd = fopen(logpath,"ab");
 	if(logfd == NULL) {
@@ -58,105 +70,106 @@ int Java_eu_tb_zesense_ZeJNIHub_ze_1coap_1server_1root() {
 	}
 	else LOGI("success opening %s", logpath);
 
-
-	// Log experiment start time
-	if (fputs(ctime(&lt), logfd)<0) LOGW("write failed");
-
-	/* Fire threads! (as the last thing) */
-	/*
-	 * In a three-thread scenario:
-	 * - receiver needs cctx, smctx, smreqbuf, notbuf, cache
-	 * - sm needs smctx, smreqbuf, notbuf, cache
-	 * - sender needs cctx, smreqbuf, notbuf
-	 *
-	 * (receiver needs smctx because of the tiny bastard pick-up of
-	 * a one-shot sample, which for the moment we leave in the receiver
-	 * thread)
-	 * (for the moment we leave one-shot requests to the receiver
-	 * supposing that the request rate is not so overwhelming..
-	 * though this means either sharing the outwards socket or
-	 * create a response buffer for the sender to pick up from)
-	 * (a possible solution is to modify the notbuf & coap_notify() to include
-	 * not only notifications but any kind of response, with a parameter fed to
-	 * coap_notify() do drive the coap_notify() behaviour)
-	 *
-	 * (sender needs smreqbuf because it might
-	 * decide to stop a stream if the acks do not arrive)
-	 */
-
-	fd_set readfds;
-	struct timeval tv, *timeout;
-	int result;
-	coap_tick_t now;
-	coap_queue_t *nextpdu;
-	//char addr_str[NI_MAXHOST] = "192.168.43.1";
-	//char addr_str[NI_MAXHOST] = "10.0.2.15";
-	//char port_str[NI_MAXSERV] = "5683";
-	int opt;
-	coap_log_t log_level = LOG_WARN;
-
-	coap_set_log_level(log_level);
-
-
-
+	/* Initialize the resource tree. */
 	ze_coap_init_resources(context);
 
-	//signal(SIGINT, handle_sigint);
+
+	/* Fire threads! (at last..) */
+	/*
+	 * In a two-thread scenario:
+	 * - CoAP server needs *cctx, *smreqbu, *notbuf
+	 * - Streaming Manager needs *smctx, *smreqbuf, *notbuf
+	 *
+	 * Since most of the already made library function calls take
+	 * coap_context_t and are unaware of our buffers,
+	 * let's put references to our buffers inside coap_context_t
+	 * so there's no need to change library function signatures.
+	 * (100% sure??)
+	 *
+	 * The Streaming Manager is tailored for the use of the buffers
+	 * so we can give the references in a separate way.
+	 */
+
+	int smerr, coaperr;
+
+	pthread_t streaming_manager_thread;
+	struct sm_thread_args smargs;
+	smargs.smctx = smctx;
+	smargs.smreqbuf = smreqbuf;
+	smargs.notbuf = notbuf;
+
+	pthread_t coap_server_thread;
+	struct coap_thread_args coapargs;
+	coapargs.cctx = cctx;
+	coapargs.smreqbuf = smreqbuf;
+	coapargs.notbuf = notbuf;
+
+	smerr = pthread_create(&streaming_manager_thread, NULL,
+			ze_coap_streaming_thread, &smargs);
+	if (smerr != 0) {
+		LOGW("Failed to create thread: %s\n", strerror(error));
+		exit(1);
+	}
+
+	coaperr = pthread_create(&coap_server_thread, NULL,
+			ze_coap_server_core_thread, &coapargs);
+	if (coaperr != 0) {
+		LOGW("Failed to create thread: %s\n", strerror(error));
+		exit(1);
+	}
+
+	/* Logging. */
+	if (fputs("Threads launched correctly on ", logfd)<0) LOGW("write failed");
+	if (fputs(ctime(&lt), logfd)<0) LOGW("write failed");
 
 
-	// Start children threads
+	/* Rejoin our children, otherwise the variables we've
+	 * created will go out of scope.. */
+	int *exitcode;
+	pthread_join(streaming_manager_thread, &exitcode);
+	pthread_join(ze_coap_server_core_thread, &exitcode);
+}
 
 
+/* Interprets IP & Port on which opens and binds a socket. */
+coap_context_t *
+get_context(const char *node, const char *port) {
+  coap_context_t *ctx = NULL;
+  int s;
+  struct addrinfo hints;
+  struct addrinfo *result, *rp;
 
-	while ( !quit ) {
-		FD_ZERO(&readfds);
-		FD_SET( ctx->sockfd, &readfds );
+  memset(&hints, 0, sizeof(struct addrinfo));
+  hints.ai_family = AF_UNSPEC;    /* Allow IPv4 or IPv6 */
+  hints.ai_socktype = SOCK_DGRAM; /* Coap uses UDP */
+  hints.ai_flags = AI_PASSIVE | AI_NUMERICHOST;
 
-		nextpdu = coap_peek_next( ctx );
-
-		coap_ticks(&now);
-		while ( nextpdu && nextpdu->t <= now ) {
-			coap_retransmit( ctx, coap_pop_next( ctx ) );
-			nextpdu = coap_peek_next( ctx );
-		}
-
-		if ( nextpdu && nextpdu->t <= now + COAP_RESOURCE_CHECK_TIME ) {
-			/* set timeout if there is a pdu to send before our automatic timeout occurs */
-			tv.tv_usec = ((nextpdu->t - now) % COAP_TICKS_PER_SECOND) * 1000000 / COAP_TICKS_PER_SECOND;
-			tv.tv_sec = (nextpdu->t - now) / COAP_TICKS_PER_SECOND;
-			timeout = &tv;
-		} else {
-			tv.tv_usec = 0;
-			tv.tv_sec = COAP_RESOURCE_CHECK_TIME;
-			timeout = &tv;
-		}
-		result = select( FD_SETSIZE, &readfds, 0, 0, timeout );
-
-		if ( result < 0 ) {		/* error */
-			if (errno != EINTR)
-				perror("select");
-		} else if ( result > 0 ) {	/* read from socket */
-			if ( FD_ISSET( ctx->sockfd, &readfds ) ) {
-				coap_read( ctx );	/* read received data */
-				coap_dispatch( ctx );	/* and dispatch PDUs from receivequeue */
-			}
-		} else {			/* timeout */
-			/* coap_check_resource_list( ctx ); */
-		}
-
-#ifndef WITHOUT_ASYNC
-	/* check if we have to send asynchronous responses */
-	check_async(ctx, now);
-#endif /* WITHOUT_ASYNC */
-
-#ifndef WITHOUT_OBSERVE
-	/* check if we have to send observe notifications */
-	check_observe(ctx);
-#endif /* WITHOUT_OBSERVE */
+  s = getaddrinfo(node, port, &hints, &result);
+  if ( s != 0 ) {
+    fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(s));
+    return NULL;
   }
 
-	coap_free_context( cctx );
-	sm_free_context( smctx );
+  /* iterate through results until success */
+  for (rp = result; rp != NULL; rp = rp->ai_next) {
+    coap_address_t addr;
 
-	return 0;
+    if (rp->ai_addrlen <= sizeof(addr.addr)) {
+      coap_address_init(&addr);
+      addr.size = rp->ai_addrlen;
+      memcpy(&addr.addr, rp->ai_addr, rp->ai_addrlen);
+
+      ctx = coap_new_context(&addr);
+      if (ctx) {
+	/* TODO: output address:port for successful binding */
+	goto finish;
+      }
+    }
+  }
+
+  fprintf(stderr, "no context available for interface '%s'\n", node);
+
+ finish:
+  freeaddrinfo(result);
+  return ctx;
 }

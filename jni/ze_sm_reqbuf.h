@@ -36,15 +36,11 @@ typedef struct ze_sm_request_t {
 	/* Request type */
 	int rtype;
 
-	//TODO: could use a union
-
-	/* Request parameters, NULL when they do not apply */
 	int sensor;
 
-	/* Ticket corresponding to the underlying registration */
-	//coap_registration_t *reg;
-	coap_ticket_t reg;
+	coap_ticket_t ticket;
 
+	/* Request parameters, NULL when they do not apply */
 	int freq;
 	/*
 	coap_address_t dest;
@@ -87,6 +83,6 @@ ze_sm_request_t get_sm_buf_item(ze_sm_request_buf_t *buf);
  * @return Zero on success
  */
 int put_sm_buf_item(ze_sm_request_buf_t *buf, int rtype, int sensor, /*coap_address_t dest,*/
-		coap_registration_t *reg, int freq/*, int tknlen, unsigned char *tkn*/);
+		coap_ticket_t reg, int freq/*, int tknlen, unsigned char *tkn*/);
 
 void init_sm_buf(ze_sm_request_buf_t *buf);
