@@ -11,7 +11,8 @@
  * http://libcoap.sourceforge.net/
  */
 
-ze_coap_server_core_thread(coap_context_t *cctx, ze_coap_request_buf_t *notbuf) {
+ze_coap_server_core_thread(coap_context_t *cctx, ze_sm_request_buf_t *smreqbuf,
+		ze_coap_request_buf_t *notbuf) {
 
 	fd_set readfds;
 	struct timeval tv, *timeout;

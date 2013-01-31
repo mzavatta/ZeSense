@@ -1,3 +1,12 @@
+/*
+ * ZeSense CoAP server
+ * -- resource-specific method handlers
+ *
+ * Marco Zavatta
+ * <marco.zavatta@telecom-bretagne.eu>
+ * <marco.zavatta@mail.polimi.it>
+ */
+
 // the four request handler methods
 // the two observation handler methods
 

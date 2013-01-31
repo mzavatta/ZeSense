@@ -61,6 +61,9 @@ int Java_eu_tb_zesense_ZeJNIHub_ze_1coap_1server_1root() {
 	if (!notbuf)
 		return -1;
 
+	cctx->notbuf = notbuf;
+	cctx->smreqbuf = smreqbuf;
+
     /* Open log file. */
 	char *logpath = LOGPATH;
 	logfd = fopen(logpath,"ab");
@@ -74,7 +77,7 @@ int Java_eu_tb_zesense_ZeJNIHub_ze_1coap_1server_1root() {
 	ze_coap_init_resources(context);
 
 
-	/* Fire threads! (at last..) */
+	/* Fire threads, at last.. */
 	/*
 	 * In a two-thread scenario:
 	 * - CoAP server needs *cctx, *smreqbu, *notbuf
@@ -84,7 +87,10 @@ int Java_eu_tb_zesense_ZeJNIHub_ze_1coap_1server_1root() {
 	 * coap_context_t and are unaware of our buffers,
 	 * let's put references to our buffers inside coap_context_t
 	 * so there's no need to change library function signatures.
-	 * (100% sure??)
+	 * (for example, the GET POST etc.. handlers have a signature
+	 * coap_context_t  *, struct coap_resource_t *, coap_address_t *,
+	 * coap_pdu_t *, str *, coap_pdu_t *
+	 * but they do need the SM buffer!)
 	 *
 	 * The Streaming Manager is tailored for the use of the buffers
 	 * so we can give the references in a separate way.

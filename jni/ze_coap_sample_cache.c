@@ -1,6 +1,7 @@
 /*
  * ZeSense Streaming Manager
  * -- last known sample cache
+ * (deprecated)
  *
  * Marco Zavatta
  * <marco.zavatta@telecom-bretagne.eu>

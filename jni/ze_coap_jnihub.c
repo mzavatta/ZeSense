@@ -4,7 +4,7 @@
  * <marco.zavatta@telecom-bretagne.eu>
  */
 
-#include <jni.h>
+//#include <jni.h>
 
 
-void Java_eu_tb_zesense_ZeJNIHub_zeSense_1SamplingNative(JNIEnv* env, jobject thiz) {
+//void Java_eu_tb_zesense_ZeJNIHub_zeSense_1SamplingNative(JNIEnv* env, jobject thiz) {

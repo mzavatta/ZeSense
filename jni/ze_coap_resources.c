@@ -119,7 +119,7 @@ accel_GET_handler (coap_context_t  *context, struct coap_resource_t *resource,
 			asy = coap_register_async(context, peer, request,
 					COAP_ASYNC_SEPARATE, NULL);
 
-			put_req_buf_item(context->smreqbuf, SM_REQ_ONESHOT, ASENSOR_TYPE_ACCELEROMETER,
+			put_sm_buf_item(context->smreqbuf, SM_REQ_ONESHOT, ASENSOR_TYPE_ACCELEROMETER,
 					(coap_ticket_t)asy->id, NULL);
 		}
 	}
@@ -130,7 +130,7 @@ accel_GET_handler (coap_context_t  *context, struct coap_resource_t *resource,
 		asy = coap_register_async(context, peer, request,
 				COAP_ASYNC_SEPARATE, NULL);
 
-		put_req_buf_item(context->smreqbuf, SM_REQ_ONESHOT, ASENSOR_TYPE_ACCELEROMETER,
+		put_sm_buf_item(context->smreqbuf, SM_REQ_ONESHOT, ASENSOR_TYPE_ACCELEROMETER,
 				(coap_ticket_t)asy->id, NULL);
 
 		/* As per CoAP observer draft, clear this registration.
