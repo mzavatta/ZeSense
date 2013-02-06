@@ -10,6 +10,8 @@
  * <marco.zavatta@mail.polimi.it>
  */
 
+#include "ze_coap_reqbuf.h"
+
 
 ze_coap_request_t get_coap_buf_item(ze_coap_request_buf_t *buf) {
 

@@ -47,7 +47,7 @@ public class ZeCoAPService extends Service {
 			Log.i(TAG, "ZeCoAPThread started running");
 			
 			// Enter the native world..
-			ZeJNIHub.ze_coap_server_main();
+			ZeJNIHub.ze_coap_server_root();
 			Log.i(TAG, "ZeCoAPThread native call returned");
 			
 			// When it returns, bye bye..

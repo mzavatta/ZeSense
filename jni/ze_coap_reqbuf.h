@@ -10,15 +10,16 @@
  * <marco.zavatta@mail.polimi.it>
  */
 
+#ifndef ZE_COAP_REQBUF_H
+#define ZE_COAP_REQBUF_H
+
+#include <pthread.h>
+
+#include "ze_streaming_manager.h"
+#include "ze_payload.h"
+
 /* Buffer size */
 #define COAP_RBUF_SIZE		20
-
-/* Request codes */
-#define COAP_SEND_NOTIF			50
-#define COAP_SEND_ASYNCH		60
-#define COAP_STREAM_STOPPED		70
-#define COAP_SMREQ_INVALID		40
-
 
 struct ze_coap_request_buf_t;
 struct ze_coap_request_t;
@@ -103,3 +104,5 @@ int put_coap_buf_item(ze_coap_request_buf_t *buf, int rtype,
 
 void init_coap_buf(ze_coap_request_buf_t *buf);
 
+
+#endif

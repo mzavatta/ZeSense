@@ -11,6 +11,8 @@
  * http://libcoap.sourceforge.net/
  */
 
+#include "ze_coap_server_core.h"
+
 ze_coap_server_core_thread(coap_context_t *cctx, ze_sm_request_buf_t *smreqbuf,
 		ze_coap_request_buf_t *notbuf) {
 

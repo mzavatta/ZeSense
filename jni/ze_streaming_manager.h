@@ -8,7 +8,15 @@
  */
 
 
+#ifndef ZE_STREAMING_MANAGER_H
+#define ZE_STREAMING_MANAGER_H
+
 #include <android/sensor.h>
+#include "coap.h"
+#include "ze_coap_server_core.h"
+#include "ze_coap_reqbuf.h"
+#include "ze_sm_reqbuf.h"
+#include "ze_log.h"
 
 
 /* Error conditions */
@@ -243,8 +251,8 @@ int sm_is_streaming(stream_context_t *mngr, int sensor_id, coap_address_t dest);
 // it will be anyway the receiver thread that does it but conceptually it's
 // a streaming manager job (because of the payload formatting work)..
 // or the sample cache's job because of the cache access work
-int sm_get_single_sample(ze_sample_cache_t *cache, int sensor_id,
-		unsigned char *data, int length);
+//int sm_get_single_sample(ze_sample_cache_t *cache, int sensor_id,
+//		unsigned char *data, int length);
 
 /**
  * Since there can be more than one one-shot request for a given destination
@@ -267,3 +275,5 @@ int sm_new_oneshot(stream_context_t *mngr, int sensor_id, coap_address_t dest,
 
 
 stream_context_t *get_streaming_manager(/*coap_context_t  *cctx*/);
+
+#endif

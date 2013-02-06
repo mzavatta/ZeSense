@@ -1,7 +1,9 @@
 /*
  * ZeSense
+ *
  * Author: Marco Zavatta
  * <marco.zavatta@telecom-bretagne.eu>
+ * <marco.zavatta@mail.polimi.it>
  */
 
 #include <jni.h>

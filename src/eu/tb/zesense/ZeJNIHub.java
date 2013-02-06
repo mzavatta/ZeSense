@@ -4,7 +4,7 @@ public class ZeJNIHub {
 	
     public native static void ze_samplingnative();
     
-    public native static void ze_coap_server_main();
+    public native static int ze_coap_server_root();
 	
     public static void loadNativeLibraries() {
     	System.loadLibrary("ZeSense");

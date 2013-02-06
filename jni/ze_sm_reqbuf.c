@@ -10,6 +10,8 @@
  * <marco.zavatta@mail.polimi.it>
  */
 
+#include "ze_sm_reqbuf.h"
+
 
 ze_sm_request_t get_sm_buf_item(ze_sm_request_buf_t *buf) {
 

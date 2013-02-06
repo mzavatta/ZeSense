@@ -11,8 +11,8 @@
  * http://libcoap.sourceforge.net/
  */
 
-#include 'ze_coap_server_core.h'
-#include 'ze_coap_resources.h'
+#include "ze_coap_server_root.h"
+
 
 struct sm_thread_args {
 	stream_context_t *smctx;
@@ -65,7 +65,7 @@ int Java_eu_tb_zesense_ZeJNIHub_ze_1coap_1server_1root() {
 	cctx->smreqbuf = smreqbuf;
 
     /* Open log file. */
-	char *logpath = LOGPATH;
+	char *logpath = ZELOGPATH;
 	logfd = fopen(logpath,"ab");
 	if(logfd == NULL) {
 		LOGW("unable to open %s", logpath);

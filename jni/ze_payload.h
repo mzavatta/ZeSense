@@ -7,6 +7,8 @@
  * <marco.zavatta@mail.polimi.it>
  */
 
+#ifndef ZE_PAYLOAD_H
+#define ZE_PAYLOAD_H
 
 typedef struct ze_payload_t {
 	int64_t wts;
@@ -17,3 +19,5 @@ typedef struct ze_payload_t {
 	int length;
 	unsigned char *data;
 };
+
+#endif

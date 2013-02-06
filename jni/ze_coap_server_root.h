@@ -11,6 +11,9 @@
  * http://libcoap.sourceforge.net/
  */
 
+#ifndef ZE_COAP_SERVER_ROOT_H
+#define ZE_COAP_SERVER_ROOT_H
+
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -31,19 +34,19 @@
 #include "resource.h"
 #include "coap.h"
 
-#include <android/log.h>
+#include "ze_coap_resources.h"
+#include "ze_coap_server_core.h"
+#include "ze_streaming_manager.h"
 
-#define LOGI(...) ((void)__android_log_print(ANDROID_LOG_INFO, "ze_coap_server", __VA_ARGS__))
-#define LOGW(...) ((void)__android_log_print(ANDROID_LOG_WARN, "ze_coap_server", __VA_ARGS__))
-#define LOGE(...) ((void)__android_log_print(ANDROID_LOG_ERROR, "ze_coap_server", __VA_ARGS__))
+
+#include "ze_log.h"
 
 // Server endpoint coordinates
 #define SERVER_IP "192.168.43.1"	//Wifi hotspot interface
 //#define SERVER_IP "10.0.2.15" 	//Android emulator interface
 #define SERVER_PORT "5683"
 
-// Global server settings
-#define LOGPATH "/sdcard/ze_coap_server.txt"
-
 // Start function
 int Java_eu_tb_zesense_ZeJNIHub_ze_1coap_1server_1example_1main();
+
+#endif

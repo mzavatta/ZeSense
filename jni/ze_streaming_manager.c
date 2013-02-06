@@ -7,6 +7,7 @@
  * <marco.zavatta@mail.polimi.it>
  */
 
+#include "ze_streaming_manager.h"
 
 ze_stream_t *sm_start_stream(stream_context_t *mngr, int sensor_id,
 		coap_ticket_t reg, int freq) {

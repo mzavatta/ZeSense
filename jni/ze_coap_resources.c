@@ -5,7 +5,13 @@
  * Marco Zavatta
  * <marco.zavatta@telecom-bretagne.eu>
  * <marco.zavatta@mail.polimi.it>
+ *
+ * Built using libcoap by
+ * Olaf Bergmann <bergmann@tzi.org>
+ * http://libcoap.sourceforge.net/
  */
+
+#include "ze_coap_resources.h"
 
 void
 ze_coap_init_resources(coap_context_t *context) {
@@ -158,7 +164,7 @@ accel_on_unregister(coap_context_t *ctx, coap_registration_t *reg) {
 	 * If the streaming manager does not have any stream
 	 * with that ticket (should not happen) it confirms the cancellation anyways.
 	 */
-	put_req_buf_item(ctx->smreqbuf, SM_REQ_STOP, ASENSOR_TYPE_ACCELEROMETER,
+	put_sm_buf_item(ctx->smreqbuf, SM_REQ_STOP, ASENSOR_TYPE_ACCELEROMETER,
 			coap_registration_checkout(reg), NULL);
 
 }

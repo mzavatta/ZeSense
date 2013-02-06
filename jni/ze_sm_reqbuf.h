@@ -10,6 +10,13 @@
  * <marco.zavatta@mail.polimi.it>
  */
 
+#ifndef ZE_SM_REQBUF_H
+#define ZE_SM_REQBUF_H
+
+#include <pthread.h>
+#include "ze_streaming_manager.h"
+
+
 /* Buffer size */
 #define SM_RBUF_SIZE		20
 
@@ -86,3 +93,5 @@ int put_sm_buf_item(ze_sm_request_buf_t *buf, int rtype, int sensor, /*coap_addr
 		coap_ticket_t reg, int freq/*, int tknlen, unsigned char *tkn*/);
 
 void init_sm_buf(ze_sm_request_buf_t *buf);
+
+#endif
