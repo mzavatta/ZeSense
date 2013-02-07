@@ -8,6 +8,8 @@ import android.util.Log;
 public class ZeCoAPService extends Service {
 	
 	private static final String TAG = "ZeSense";
+	
+	ZeCoAPThread sensorThread;
 
 	@Override
 	public void onCreate() {
@@ -20,7 +22,7 @@ public class ZeCoAPService extends Service {
     	
     	// Avoid blocking the main UI thread in which the service is running
     	// Remember that Dalvik uses a pthread-like implementation
-    	ZeCoAPThread sensorThread = new ZeCoAPThread();
+    	sensorThread = new ZeCoAPThread();
     	sensorThread.start();
     	
 		return START_NOT_STICKY;
@@ -34,25 +36,8 @@ public class ZeCoAPService extends Service {
 	
 	@Override
 	public void onDestroy() {
+		sensorThread.interrupt();
 		Log.i(TAG, "ZeCoAPService destroyed");
-	}
-	
-	// Avoid blocking the main UI thread in which the service is running
-	private final class ZeCoAPThread extends Thread {
-		
-		private static final String TAG = "ZeSense";
-		
-		@Override
-		public void run() {
-			Log.i(TAG, "ZeCoAPThread started running");
-			
-			// Enter the native world..
-			ZeJNIHub.ze_coap_server_root();
-			Log.i(TAG, "ZeCoAPThread native call returned");
-			
-			// When it returns, bye bye..
-			stopSelf();
-		}
 	}
 
 }

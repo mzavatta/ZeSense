@@ -44,7 +44,7 @@ public class ZeSense extends Activity {
         */
         
         // Load native libraries
-        ZeJNIHub.loadNativeLibraries();
+        //ZeJNIHub.loadNativeLibraries();
         
         // Start CoAP service
         coapServiceIntent = new Intent(this, ZeCoAPService.class);

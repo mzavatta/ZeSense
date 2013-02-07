@@ -13,12 +13,14 @@ LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
 LOCAL_MODULE    := ZeSense
-LOCAL_SRC_FILES :=
+LOCAL_SRC_FILES := ze_jnihub.c
 LOCAL_LDLIBS := -llog -landroid
-LOCAL_STATIC_LIBRARIES := libcoap-3.0.0-android
+LOCAL_STATIC_LIBRARIES := zesensecoap libcoap-3.0.0-android
+LOCAL_C_INCLUDES := $(LOCAL_PATH)/../../ZeSenseCoAP
 
 include $(BUILD_SHARED_LIBRARY)
 
-$(call import-module,libcoap-3.0.0-android)
 $(call import-module,ZeSenseCoAP)
+$(call import-module,libcoap-3.0.0-android)
+
 

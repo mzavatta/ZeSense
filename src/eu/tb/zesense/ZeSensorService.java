@@ -47,7 +47,7 @@ public class ZeSensorService extends Service {
 			Log.i(TAG, "Inside ZeSensorThread!");
 			
 			// Enter the native world..
-			ZeJNIHub.ze_samplingnative();
+			//ZeJNIHub.ze_samplingnative();
 			Log.i(TAG, "native call returned");
 			
 			// When it returns, bye bye..
