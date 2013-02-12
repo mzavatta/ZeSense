@@ -21,28 +21,34 @@ public class ZeSense extends Activity {
 	// Our custom Wifi manager
 	ZeWifiAP zeWifiAP;
 	
-	Intent coapServiceIntent;
+	//ZeGPSManager gpsManager;
 	
-    
+	Intent coapServiceIntent;
+	Intent GPSServiceIntent;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_ze_sense);
         
+        /*
         // Set-up Wifi Access Point
         zeWifiAP = new ZeWifiAP(this);
         if(zeWifiAP.initialize("zesense")) {
         	if(!zeWifiAP.startAP()) Log.w(TAG, "ZeSense cannot start Wifi AP");
         }
         else Log.w(TAG, "ZeSense cannot initialize Wifi AP");
+        */
         
         /*
         ZeWifiDirectAP wifiAccessPoint = new ZeWifiDirectAP(this);
         wifiAccessPoint.initialize();
         wifiAccessPoint.startAP();
         */
-        
+        /*
+        GPSServiceIntent = new Intent(this, ZeGPSManager_serv.class);
+        startService(GPSServiceIntent);
+        */
         // Load native libraries
         //ZeJNIHub.loadNativeLibraries();
         
@@ -119,6 +125,8 @@ public class ZeSense extends Activity {
     
     @Override
     public void onDestroy() {
+    	
+    	//stopService(GPSServiceIntent);
     	
     	// Kill CoAP service
     	stopService(coapServiceIntent);
