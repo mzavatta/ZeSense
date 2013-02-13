@@ -50,7 +50,7 @@ enum {
 };
  */
 
-// Definitions for missing NDK sensor types
+// Definitions for missing NDK sensor types, as we include only the NDK interface
 #define ZESENSE_SENSOR_TYPE_ORIENTATION		3
 #define ZESENSE_SENSOR_TYPE_PRESSURE		6
 

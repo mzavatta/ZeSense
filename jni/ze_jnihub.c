@@ -12,9 +12,16 @@
 /* Package eu/tb/zesense declared in class ZeCOAPThread method name ze_coap_server_entry
  * parameter ZeGPSManager whose signature is Leu/tb/zesense/ZeGPSManager;
  */
+
+/*
 jint
 Java_eu_tb_zesense_ZeCoAPThread_ze_1coap_1server_1entry__Leu_tb_zesense_ZeGPSManager_2
 	(JNIEnv* env, jobject thiz, jobject gpsManager) {
+	*/
+
+jint
+Java_eu_tb_zesense_ZeCoAPThread_ze_1coap_1server_1entry__Landroid_content_Context_2
+	(JNIEnv* env, jobject thiz, jobject actx) {
 
 	/*_Leu_tb_zesense_ZeCoAPService_ZeCoAPThread_2*/
 	/*
@@ -39,6 +46,6 @@ Java_eu_tb_zesense_ZeCoAPThread_ze_1coap_1server_1entry__Leu_tb_zesense_ZeGPSMan
 	}
 	return 1;
 */
-	return ze_coap_server_root(env, thiz, gpsManager);
+	return ze_coap_server_root(env, thiz, actx);
 }
 

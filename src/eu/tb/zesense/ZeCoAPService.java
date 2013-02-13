@@ -11,7 +11,7 @@ public class ZeCoAPService extends Service {
 	
 	ZeCoAPThread serverThread;
 	
-	ZeGPSManager gpsManager;
+	//ZeGPSManager gpsManager;
 
 	@Override
 	public void onCreate() {
@@ -22,12 +22,14 @@ public class ZeCoAPService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
     	Log.i(TAG, "ZeCoAPService onStartCommand");
     	
+    	/*
     	gpsManager = new ZeGPSManager();
     	gpsManager.init(this);
+    	*/
     	
     	// Avoid blocking the main UI thread in which the service is running
     	// Remember that Dalvik uses a pthread-like implementation   	
-    	serverThread = new ZeCoAPThread(gpsManager);
+    	serverThread = new ZeCoAPThread(this);
     	serverThread.start();
     	
 		return START_NOT_STICKY;
@@ -45,7 +47,7 @@ public class ZeCoAPService extends Service {
 		 * the role of graceful quit should be borne by the
 		 * Sreaming Manager, who uses the object
 		 */
-		gpsManager.destroy();
+		//gpsManager.destroy();
 		
 		serverThread.interrupt();
 		Log.i(TAG, "ZeCoAPService destroyed");

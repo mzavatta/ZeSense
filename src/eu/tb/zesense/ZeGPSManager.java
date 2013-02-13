@@ -8,12 +8,26 @@ import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.HandlerThread;
 import android.os.Looper;
 import android.util.Log;
 
 public class ZeGPSManager {
 	
 	/* Leu/tb/zesense/ZeGPSManager; */
+	
+	/**
+	 * We have a thread-safety problem here.
+	 * Stuff is called from two threads, namely:
+	 * - lastPolledLocation (updated by the listener,
+	 *   read by the Streaming Manager)
+	 * - locQueue (built in thread safe)
+	 * - 
+	 * 
+	 * I fell like also locationManager is used by
+	 * the system and our Streaming Manager thread..
+	 */
 	
 	Context context;
 	
@@ -36,6 +50,10 @@ public class ZeGPSManager {
 	Location lastPolledLocation;
 	boolean isStreaming = false;
 	
+	/* Handler thread for our Listener callbacks. */
+	HandlerThread handlerThread;
+	
+	/* "init", "(Landroid/content/Context;)V" */
     public void init(Context context) {
     	
     	Log.i(TAG, "ZeGPSManager initializing");
@@ -47,17 +65,24 @@ public class ZeGPSManager {
 		if (locationManager == null)
 			Log.w(TAG, "Location manager failed to initialize");
 		
+		handlerThread = new HandlerThread("ZeGPSCallbacks");
+		
+		Log.i(TAG, "Created "+handlerThread.getName());
+		/*
 		callerLooper = Looper.myLooper();
 		if (callerLooper == null)
 			Log.w(TAG, "Caller looper is null...");
+			*/
     	
     	locQueue = new LinkedBlockingQueue<Location>(20);
     	
     	isStreaming = false;
     }
 	
+    /* "destroy", "()V" */
 	public void destroy() {
-		locationManager.removeUpdates(locationListener);
+		//locationManager.removeUpdates(locationListener);
+		stopStream();
 		Log.i(TAG, "ZeGPSManager destroyed");
 	}
 	
@@ -69,7 +94,9 @@ public class ZeGPSManager {
 			Log.i(TAG, "Listener, onLocationChanged");
 			try {
 				locQueue.put(location);
-				lastPolledLocation = location;
+				/*synchronized(this) { 
+					updateCache(location); //maybe a cache can be kept by the poll()er?
+				}*/
 			} catch (InterruptedException e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
@@ -91,7 +118,16 @@ public class ZeGPSManager {
 			Log.i(TAG, "Listener, onStatusChanged");
 		}
 	};
+	
+	/* "updateCache", "(Landroid/location/Location;)V" */
+	public void updateCache(Location location) {
+		lastPolledLocation = location;
+	}
 
+	/* Cannot synchronize this, otherwise I cannot make space
+	 * in the queue in case it is full and somebody is waiting for
+	 * some space.
+	 */
 	/* "getSample", "()Landroid/location/Location;" */
 	public Location getSample() {
 		/* As we pass the pointer back to the native and the native
@@ -110,9 +146,15 @@ public class ZeGPSManager {
 	/* "startSingle", "()Landroid/location/Location;" */
 	public Location startSingle() {
 		if (isStreaming) {
-			return new Location(lastPolledLocation);
+			//synchronized(this) {
+				return new Location(lastPolledLocation);
+			//}
 		}
-		locationManager.requestSingleUpdate(LocationManager.GPS_PROVIDER, locationListener, callerLooper);
+		
+		handlerThread.run();
+		locationManager.requestSingleUpdate(LocationManager.GPS_PROVIDER,
+				locationListener, handlerThread.getLooper());
+		
 		return null;
 	}
 	
@@ -120,12 +162,21 @@ public class ZeGPSManager {
 	public int startStream(/*long minTime*/) {
 		Log.w(TAG, "Starting GPS stream");
 		locQueue.clear();
+		
+		Log.w(TAG, "queue cleared");
+		
+		handlerThread.start();
+		
+		Log.w(TAG, "handler thread running");
+		
 		try {
 			locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER,
-				0, 0, locationListener, callerLooper);
+				0, 0, locationListener, handlerThread.getLooper());
+			Log.w(TAG, "location updates requested");
 		} catch (Exception e) { 
 			e.printStackTrace();
 		}
+		
 		isStreaming = true;
 		return 1;
 	}
@@ -133,10 +184,9 @@ public class ZeGPSManager {
 	/* "stopStream", "()I" */
 	public int stopStream() {
 		Log.w(TAG, "Stopping GPS stream");
-		Log.w(TAG, "There are "+Integer.toString(locQueue.size())+"elements in the queue");
-		Location l = locQueue.peek();
-		Log.w(TAG, "The last one is"+l.toString());
+		Log.w(TAG, "There are "+Integer.toString(locQueue.size())+" elements left in the queue");
 		locationManager.removeUpdates(locationListener);
+		handlerThread.quit();
 		isStreaming = false;
 		locQueue.clear();
 		return 1;
@@ -148,5 +198,5 @@ public class ZeGPSManager {
 		startStream(/*minTime*/);
 		return 1;
 	}
-
+	
 }
