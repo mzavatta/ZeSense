@@ -31,14 +31,14 @@ public class ZeSense extends Activity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_ze_sense);
         
-        /*
+        
         // Set-up Wifi Access Point
         zeWifiAP = new ZeWifiAP(this);
         if(zeWifiAP.initialize("zesense")) {
         	if(!zeWifiAP.startAP()) Log.w(TAG, "ZeSense cannot start Wifi AP");
         }
         else Log.w(TAG, "ZeSense cannot initialize Wifi AP");
-        */
+       
         
         /*
         ZeWifiDirectAP wifiAccessPoint = new ZeWifiDirectAP(this);

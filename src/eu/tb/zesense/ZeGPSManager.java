@@ -91,7 +91,12 @@ public class ZeGPSManager {
 		@Override
 		public void onLocationChanged(Location location) {
 			// TODO Auto-generated method stub
-			Log.i(TAG, "Listener, onLocationChanged");
+			Log.i(TAG, "Listener, onLocationChanged "+location.toString());
+			
+			// The time that arrives with the fix is in UTC from 1Jan1970
+			// Let's fake it for the moment as we please..
+			location.setTime(System.nanoTime());
+			
 			try {
 				locQueue.put(location);
 				/*synchronized(this) { 
