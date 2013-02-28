@@ -29,7 +29,23 @@ public class ZeGPSManager {
 	 * the system and our Streaming Manager thread..
 	 */
 	
-	Context context;
+	/*
+	 * THE INTERFACE OFFERED BY THIS CLASS SHOULD BE 
+	 * FUNCTIONALLY THE SAME AS THE ONE OFFERED BY
+	 * ANDROID SENSORS IN THE NDK, SO THAT WE CAN USE
+	 * BOTH ANDROID SENSORS AND THIS MANAGER WITH
+	 * THE SAME LOGIC
+	 * The NDK does not offer a function to know
+	 * if a particular sensor is streaming or not.
+	 * It may keep track of it internally not to
+	 * perform the same action twice upon two successive
+	 * requests, but it does not export this state in
+	 * any way. We mirror this approach here with no
+	 * way to export the state but with a check performed
+	 * internally (the state info is isStreaming).
+	 */
+	
+	private Context context;
 	
 	private static final String TAG = "ZeGPSManager";
 	
@@ -38,20 +54,20 @@ public class ZeGPSManager {
 	 * section that launches the native, or I have to save here
 	 * the looper of the guy that init()s this manager.
 	 * Preparing a looper in native does not seem to work. */
-	Looper callerLooper;
+	//private Looper callerLooper;
 	
-	LocationManager locationManager;
+	private LocationManager locationManager;
 	
 	/* As usual we need a blocking queue on the full condition (put)
 	 * and a non-blocking on the empty condition (poll) */
 	BlockingQueue<Location> locQueue;
 	
 	/* Location cache. */
-	Location lastPolledLocation;
-	boolean isStreaming = false;
+	private Location lastPolledLocation;
+	private boolean isStreaming = false;
 	
 	/* Handler thread for our Listener callbacks. */
-	HandlerThread handlerThread;
+	private HandlerThread handlerThread;
 	
 	/* "init", "(Landroid/content/Context;)V" */
     public void init(Context context) {
@@ -65,9 +81,8 @@ public class ZeGPSManager {
 		if (locationManager == null)
 			Log.w(TAG, "Location manager failed to initialize");
 		
-		handlerThread = new HandlerThread("ZeGPSCallbacks");
 		
-		Log.i(TAG, "Created "+handlerThread.getName());
+
 		/*
 		callerLooper = Looper.myLooper();
 		if (callerLooper == null)
@@ -82,7 +97,7 @@ public class ZeGPSManager {
     /* "destroy", "()V" */
 	public void destroy() {
 		//locationManager.removeUpdates(locationListener);
-		stopStream();
+		if (isStreaming) stopStream();
 		Log.i(TAG, "ZeGPSManager destroyed");
 	}
 	
@@ -93,8 +108,8 @@ public class ZeGPSManager {
 			// TODO Auto-generated method stub
 			Log.i(TAG, "Listener, onLocationChanged "+location.toString());
 			
-			// The time that arrives with the fix is in UTC from 1Jan1970
-			// Let's fake it for the moment as we please..
+			/* The time that arrives with the fix is in UTC from 1Jan1970
+			 * Let's fake it for the moment as we please.. */
 			location.setTime(System.nanoTime());
 			
 			try {
@@ -170,7 +185,15 @@ public class ZeGPSManager {
 		
 		Log.w(TAG, "queue cleared");
 		
-		handlerThread.start();
+		handlerThread = new HandlerThread("ZeGPSCallbacks");
+		Log.i(TAG, "Created "+handlerThread.getName());
+		
+		try {
+			handlerThread.start();
+		} catch (Exception e) { 
+			e.printStackTrace();
+			return 0;
+		}
 		
 		Log.w(TAG, "handler thread running");
 		
@@ -180,28 +203,38 @@ public class ZeGPSManager {
 			Log.w(TAG, "location updates requested");
 		} catch (Exception e) { 
 			e.printStackTrace();
+			return 0;
 		}
 		
 		isStreaming = true;
 		return 1;
 	}
 	
+	
 	/* "stopStream", "()I" */
 	public int stopStream() {
 		Log.w(TAG, "Stopping GPS stream");
 		Log.w(TAG, "There are "+Integer.toString(locQueue.size())+" elements left in the queue");
 		locationManager.removeUpdates(locationListener);
+		try {
 		handlerThread.quit();
+		handlerThread.interrupt();
+		} catch (Exception e) { 
+			e.printStackTrace();
+			return 0;
+		}
 		isStreaming = false;
 		locQueue.clear();
 		return 1;
 	}
 	
 	/* "changeFrequency", "(J)I" */
-	public int changeFrequency(long minTime) {
-		stopStream();
-		startStream(/*minTime*/);
-		return 1;
+	public int changeFrequency(/*long minTime*/) {
+		if (!isStreaming) return 0;
+		if ( stopStream()==1 ) {
+			if ( startStream(/*minTime*/)==1 ) return 1;
+		}
+		return 0;
 	}
 	
 }
