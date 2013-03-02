@@ -25,18 +25,18 @@ jint
 Java_eu_tb_zesense_ZeCoAPThread_ze_1coap_1server_1entry__Landroid_content_Context_2
 	(JNIEnv* env, jobject thiz, jobject actx) {
 
-	return ze_coap_server_root(env, thiz, actx);
+	return ze_server_root(env, thiz, actx);
 
 }
 
-
+/*
 jint
 Java_eu_tb_zesense_ZeSMThread_ze_1sm_1server_1entry__Landroid_content_Context_2
 	(JNIEnv* env, jobject thiz, jobject actx) {
 
 	return ze_sm_server_root(env, thiz, actx);
 
-}
+}*/
 /*
 jint
 Java_eu_tb_zesense_ZeRTPThread_get_1command__Leu_tb_zesense_ZeRTPCommand_2
