@@ -15,12 +15,12 @@ include $(CLEAR_VARS)
 LOCAL_MODULE    := ZeSense
 LOCAL_SRC_FILES := ze_jnihub.c
 LOCAL_LDLIBS := -llog -landroid
-LOCAL_STATIC_LIBRARIES := zesensecoap libcoap-3.0.0-android libzertp
-LOCAL_C_INCLUDES := $(LOCAL_PATH)/../../ZeSenseCoAP
+LOCAL_STATIC_LIBRARIES := zesenseserver libcoap-3.0.0-android libzertp
+LOCAL_C_INCLUDES := $(LOCAL_PATH)/../../ZeSenseServer
 
 include $(BUILD_SHARED_LIBRARY)
 
-$(call import-module,ZeSenseCoAP)
+$(call import-module,ZeSenseServer)
 $(call import-module,libcoap-3.0.0-android)
 $(call import-module,libzertp)
 
