@@ -2,7 +2,10 @@ package eu.tb.zesense;
 
 import android.net.wifi.WifiManager;
 import android.os.Bundle;
+import android.os.PowerManager;
+import android.os.PowerManager.WakeLock;
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
 import android.hardware.Camera;
 import android.util.Log;
@@ -25,12 +28,17 @@ public class ZeSense extends Activity {
 	
 	Intent coapServiceIntent;
 	Intent GPSServiceIntent;
+	
+	WakeLock wakeLock;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_ze_sense);
         
+        PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ZeSense Wakelock");
+        wakeLock.acquire();
         
         // Set-up Wifi Access Point
         zeWifiAP = new ZeWifiAP(this);
@@ -125,6 +133,9 @@ public class ZeSense extends Activity {
     
     @Override
     public void onDestroy() {
+    	
+    	//Release wakelock
+    	wakeLock.release();
     	
     	//stopService(GPSServiceIntent);
     	
