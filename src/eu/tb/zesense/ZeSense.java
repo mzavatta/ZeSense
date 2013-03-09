@@ -11,6 +11,7 @@ import android.hardware.Camera;
 import android.util.Log;
 import android.view.Menu;
 import android.widget.Button;
+import android.widget.TextView;
 
 public class ZeSense extends Activity {
 
@@ -30,23 +31,33 @@ public class ZeSense extends Activity {
 	Intent GPSServiceIntent;
 	
 	WakeLock wakeLock;
+	
+	TextView display;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_ze_sense);
         
+        display = (TextView) findViewById(R.id.display);
+        
         PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ZeSense Wakelock");
         wakeLock.acquire();
         
+        /*
+        ZeSamplingStats s = new ZeSamplingStats(this, display);
+        s.runStats();
+        */
+        
+        ///****************************
         // Set-up Wifi Access Point
         zeWifiAP = new ZeWifiAP(this);
         if(zeWifiAP.initialize("zesense")) {
         	if(!zeWifiAP.startAP()) Log.w(TAG, "ZeSense cannot start Wifi AP");
         }
         else Log.w(TAG, "ZeSense cannot initialize Wifi AP");
-       
+        //******************************/
         
         /*
         ZeWifiDirectAP wifiAccessPoint = new ZeWifiDirectAP(this);
@@ -60,9 +71,11 @@ public class ZeSense extends Activity {
         // Load native libraries
         //ZeJNIHub.loadNativeLibraries();
         
+        ///*********************
         // Start CoAP service
         coapServiceIntent = new Intent(this, ZeCoAPService.class);
         startService(coapServiceIntent);
+        //**********************/
         
         /*
         // Start CoAP server
@@ -74,7 +87,7 @@ public class ZeSense extends Activity {
 		//((FrameLayout) findViewById(R.id.zePreview)).addView(zePreview);
        
 		// Start our SensorService
-		Intent sensorServiceIntent = new Intent(this, ZeSensorService.class);
+		//Intent sensorServiceIntent = new Intent(this, ZeSensorService.class);
 		
 		/*
 		if (savedInstanceState != null) { //recreated activity
