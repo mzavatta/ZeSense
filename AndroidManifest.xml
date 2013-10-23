@@ -4,8 +4,8 @@
     android:versionName="1.0" >
 
     <uses-sdk
-        android:minSdkVersion="14"
-        android:targetSdkVersion="15" />
+        android:minSdkVersion="10"
+        android:targetSdkVersion="16" />
     <!-- min API14 due to android.net.wifi.p2p also called Wifi Direct -->
     <!-- Samsung GalaxyS3 Android 4.0.4 API15 ICS -->
     

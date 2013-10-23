@@ -1,7 +1,6 @@
 package eu.tb.zesense;
 
 import android.content.Context;
-import android.os.Looper;
 import android.util.Log;
 
 // Avoid blocking the main UI thread in which the service is running
